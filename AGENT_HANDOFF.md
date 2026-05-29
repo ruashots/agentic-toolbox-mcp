@@ -44,11 +44,13 @@ Ask the user: *"What's the gateway URL?"* — usual shape is `http://<host>:8000
 Once you have it:
 
 1. **Test reachability before wiring.** `curl <url>` should respond (it'll return MCP protocol JSON, not a friendly page — that's expected). If it fails with connection-refused or timeout, the toolbox isn't actually running where the user thinks; escalate back to scenario (1).
-2. **Wire it into your runtime's MCP config:**
-   - Claude Code: `claude mcp add --transport http --scope user toolbox <url>`
-   - Other MCP-capable agents: HTTP transport pointing at `<url>` — exact config path varies by runtime, ask the user if you don't know yours.
-3. **Reload or restart your session** so the new tools surface. For Claude Code that's `/reload-plugins`; other runtimes vary.
-4. **Verify with `ping()`** — should return `"pong"`. If it doesn't, jump to scenario (3).
+2. **Ask about auth.** Default toolbox v1 is LAN-trust — no bearer enforced. If the user says "no auth," wire the URL bare. If they hand you a token, add `Authorization: Bearer <token>` as a header in your MCP config. Don't assume either way; ask.
+3. **Wire it into your runtime's MCP config:**
+   - Claude Code (no auth): `claude mcp add --transport http --scope user toolbox <url>`
+   - Claude Code (with bearer): `claude mcp add --transport http --scope user toolbox <url> --header "Authorization: Bearer <token>"`
+   - Other MCP-capable agents: HTTP transport pointing at `<url>`, with the bearer header if provided — exact config path varies by runtime, ask the user if you don't know yours.
+4. **Reload or restart your session** so the new tools surface. For Claude Code that's `/reload-plugins`; other runtimes vary.
+5. **Verify with `ping()`** — should return `"pong"`. If it doesn't, jump to scenario (3).
 
 ### (3) Wired but I can't see it
 
