@@ -1,6 +1,64 @@
 # Using the toolbox
 
-You have access to a shared MCP gateway that exposes web/doc/media/browser-automation tools. This document tells you which tool to pick when, how to compose them into common workflows, and which gotchas to avoid.
+A shared MCP gateway is (or is about to be) available that exposes web/doc/media/browser-automation tools to any agent on the same network. This document tells you how to get yourself wired into it, which tool to pick when, how to compose them into common workflows, and which gotchas to avoid.
+
+---
+
+## Before you start
+
+Check your tool surface. If `mcp__toolbox__*` tools are already there, you're set — skip to **Capability map** and start working.
+
+If they're missing, don't try to call them (they'll just return `Unknown tool`). Don't probe the network or guess at state. Ask the user one grounding question first:
+
+> "Where do we stand on the toolbox? Three possibilities I can handle:
+> 1. Nothing set up — I deploy the whole stack from scratch.
+> 2. Toolbox is already running somewhere, just not wired into me — give me the host or URL and I'll wire it.
+> 3. Already wired but my session can't see it — I'll walk through a refresh."
+
+Then act based on their answer.
+
+### (1) Nothing set up
+
+You're going to deploy the toolbox. This is real blast radius: ~10 min build + ~5 GB image pulls + four long-running containers + optional GPU passthrough for Whisper. Confirm scope before kicking off.
+
+Ask the user: *"Run it on this machine, or somewhere specific (LXC on Proxmox, dedicated VM, the laptop right here)?"*
+
+Then, on the chosen host with Docker + docker-compose available:
+
+```bash
+git clone https://github.com/Ruashots/agentic-toolbox-mcp toolbox
+cd toolbox
+docker compose up -d --build
+# Wait for "Uvicorn running on http://0.0.0.0:8000" in:
+docker compose logs -f gateway
+```
+
+When the gateway prints `[startup] N tools registered` followed by `Uvicorn running`, grab the host's reachable IP (`hostname -I`, or whatever the user calls it on their LAN), then continue to step (2) to wire yourself in.
+
+If the user's machine isn't a sensible host for a 24/7 stack (laptop, sandboxed environment, etc.), say so honestly — don't deploy on a bad target. Ask them to identify a host that should run it.
+
+### (2) Already running, not wired into me
+
+Ask the user: *"What's the gateway URL?"* — usual shape is `http://<host>:8000/mcp`.
+
+Once you have it:
+
+1. **Test reachability before wiring.** `curl <url>` should respond (it'll return MCP protocol JSON, not a friendly page — that's expected). If it fails with connection-refused or timeout, the toolbox isn't actually running where the user thinks; escalate back to scenario (1).
+2. **Wire it into your runtime's MCP config:**
+   - Claude Code: `claude mcp add --transport http --scope user toolbox <url>`
+   - Other MCP-capable agents: HTTP transport pointing at `<url>` — exact config path varies by runtime, ask the user if you don't know yours.
+3. **Reload or restart your session** so the new tools surface. For Claude Code that's `/reload-plugins`; other runtimes vary.
+4. **Verify with `ping()`** — should return `"pong"`. If it doesn't, jump to scenario (3).
+
+### (3) Wired but I can't see it
+
+Your session probably cached its tool list before the toolbox was reachable, or the proxy mounts populated after your initial connection.
+
+- Claude Code: try `/reload-plugins` first. If `mcp__toolbox__*` still doesn't appear, fully restart the Claude process (a fresh session, not just a new conversation).
+- Other runtimes: cycle the agent's MCP client connection — exact mechanism varies.
+- After the restart, `ping()` should return `"pong"`. If it still fails, the toolbox itself isn't reachable from where you're running; escalate back to (2) and confirm the URL with the user.
+
+Once `ping()` works, you have the full toolset. Continue.
 
 ---
 
@@ -141,11 +199,11 @@ For "just read it to me" plain text:
 
 ---
 
-## How to install this document
+## Where this document should live (persistence)
 
-Pick the wrapper that matches your agent runtime:
+The setup steps above (Before you start) are one-shot. Once the toolbox is wired into your runtime, this document is what helps you USE it well across future sessions — selection rules, recipes, gotchas. Don't make the user re-paste it every time. Persist it into your runtime's appropriate slot:
 
-**Claude Code (skill):** add YAML frontmatter and drop in `~/.claude/skills/toolbox/SKILL.md`:
+**Claude Code (skill):** save the body of this document at `~/.claude/skills/toolbox/SKILL.md` with this frontmatter:
 
 ```yaml
 ---
@@ -153,10 +211,8 @@ description: Using the homelab toolbox MCP — tool selection rules, workflow re
 ---
 ```
 
-Followed by the body of this document.
-
-**Hermes / agentic harness:** load this file into the agent's working context at session start (config option varies by harness).
+**Hermes / agentic harness:** add this file to the agent's working-context load list (config option varies by harness).
 
 **Custom local-model agent:** include this content in the system prompt or as a tool-selection guide loaded before the first user turn.
 
-**Any agent:** if you can't auto-load it, paste the **Capability map** and **Selection rules** sections into the system prompt. Those are the smallest unit of useful guidance.
+**No persistence slot available:** paste the **Capability map** and **Selection rules** sections into the system prompt. Those two are the smallest unit of useful guidance — everything else can be re-derived from them.
