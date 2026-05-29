@@ -1,0 +1,4 @@
+fastmcp>=2.0
+httpx>=0.27
+markitdown[all]>=0.0.1a3
+yt-dlp>=2024.0

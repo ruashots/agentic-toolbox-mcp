@@ -1,0 +1,34 @@
+use_default_settings: true
+
+general:
+  instance_name: "toolbox-searxng"
+  privacypolicy_url: false
+  donation_url: false
+  contact_url: false
+  enable_metrics: false
+
+search:
+  safe_search: 0
+  autocomplete: ""
+  default_lang: "en"
+  formats:
+    - html
+    - json    # required so the gateway can consume results
+
+server:
+  secret_key: "REPLACE_AT_DEPLOY"
+  limiter: false   # we ARE bots; this is a private instance on a trusted LAN
+  image_proxy: false
+  http_protocol_version: "1.1"
+
+ui:
+  static_use_hash: true
+  default_locale: "en"
+  query_in_title: false
+  infinite_scroll: false
+
+outgoing:
+  request_timeout: 10.0
+  max_request_timeout: 20.0
+  pool_connections: 100
+  pool_maxsize: 20

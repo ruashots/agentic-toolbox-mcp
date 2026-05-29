@@ -1,0 +1,86 @@
+name: toolbox
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: tb-searxng
+    restart: unless-stopped
+    networks: [toolbox]
+    volumes:
+      - ./searxng:/etc/searxng:rw
+    environment:
+      - SEARXNG_BASE_URL=http://searxng:8080/
+      - UWSGI_WORKERS=4
+      - UWSGI_THREADS=4
+
+  crawl4ai:
+    image: unclecode/crawl4ai:latest
+    container_name: tb-crawl4ai
+    restart: unless-stopped
+    networks: [toolbox]
+    shm_size: 1gb
+    environment:
+      - INSTALL_TYPE=all
+      - ENABLE_GPU=false
+
+  stirling-pdf:
+    image: frooodle/s-pdf:latest
+    container_name: tb-stirling
+    restart: unless-stopped
+    networks: [toolbox]
+    ports:
+      - "8085:8080"   # exposed for direct UI use; gateway also calls it internally
+    volumes:
+      - stirling-data:/configs
+      - stirling-logs:/logs
+    environment:
+      - DOCKER_ENABLE_SECURITY=false
+      - LANGS=en_US
+
+  whisper:
+    build: ./whisper
+    container_name: tb-whisper
+    restart: unless-stopped
+    networks: [toolbox]
+    devices:
+      - /dev/dri/card1:/dev/dri/card1
+      - /dev/dri/renderD128:/dev/dri/renderD128
+    group_add:
+      - "44"     # video (host)
+      - "993"    # render (host)
+    volumes:
+      - whisper-models:/models
+
+  gateway:
+    build: ./gateway
+    container_name: tb-gateway
+    restart: unless-stopped
+    networks: [toolbox]
+    ports:
+      - "8000:8000"   # MCP streamable-http endpoint
+    environment:
+      - SEARXNG_URL=http://searxng:8080
+      - CRAWL4AI_URL=http://crawl4ai:11235
+      - STIRLING_URL=http://stirling-pdf:8080
+      - WHISPER_URL=http://whisper:8000
+      - TOOLBOX_TOKEN=${TOOLBOX_TOKEN:-}
+    # No volume mount for /root/.cache — camoufox-mcp's startup rmdir's its own cache
+    # subdir, which EBUSY's on Docker volume mount points. Mounting the parent
+    # /root/.cache works for the rmdir but displaces fresh fetch contents on volume
+    # swap. Cleanest: let the Firefox binary live in the container's writable layer.
+    # Container restart / LXC restart preserve it; only `docker compose up --build`
+    # wipes it (and that triggers a one-time ~300 MB re-fetch on first cf_browse).
+    depends_on:
+      - searxng
+      - crawl4ai
+      - stirling-pdf
+      - whisper
+
+networks:
+  toolbox:
+    driver: bridge
+
+volumes:
+  stirling-data:
+  stirling-logs:
+  whisper-models:

@@ -1,0 +1,20 @@
+# Secrets — generated at deploy time, never commit
+.env
+.env.local
+.env.*.local
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Editor noise
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+
+# Docker artifacts if anyone bind-mounts locally
+data/
+logs/
