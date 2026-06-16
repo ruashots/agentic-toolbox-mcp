@@ -77,6 +77,7 @@ Once `ping()` works, you have the full toolset. Continue.
 | Convert a document to markdown | `convert_document` | URL or local path. Handles PDF/DOCX/PPTX/XLSX/HTML/images-with-OCR. **For PDFs use this for structured markdown.** |
 | Get plain text from a PDF | `pdf_extract_text` | Cleaner word spacing than `convert_document` for column PDFs. Use this for "give me the raw readable text." |
 | Get metadata + auto-transcript from a video URL | `extract_video` | yt-dlp under the hood, 1000+ sites supported. Returns title, uploader, duration, description, transcript-if-available. **Try this FIRST** before transcribing — many videos have free auto-captions. |
+| Download the actual audio/video **file** from a URL | `download_media` | yt-dlp + the container's Node JS runtime → grabs the genuine best stream (no degraded `format 18` fallback) and takes it as-is (no re-encode). Returns the file base64 (`content_b64`) — decode and save. `kind="audio"`/`"video"`, `max_mb` cap. Use when you need the media *itself*, not metadata/transcript/text. |
 | Transcribe audio/video when there's no auto-transcript | `transcribe_audio` | Local Whisper on GPU. See **Model selection** below — bigger isn't always better. |
 | Sanity-check the toolbox is reachable | `ping` | Returns `"pong"`. |
 

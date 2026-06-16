@@ -148,6 +148,59 @@ def extract_video(url: str, want_transcript: bool = True) -> dict:
 
 
 @mcp.tool
+def download_media(url: str, kind: str = "audio", quality: str = "best", max_mb: int = 25) -> dict:
+    """Download the actual media FILE (audio or video) from a URL and return it base64-encoded.
+
+    Unlike extract_video (returns metadata/transcript) and transcribe_audio (returns text),
+    this hands back the real file bytes so the caller can save/use it. Uses yt-dlp with the
+    container's Node JS runtime, so it sees the full format list and grabs the genuine best
+    stream — NOT YouTube's low-quality `format 18` fallback you get without a JS runtime. The
+    stream is taken as-is (no re-encode), so audio stays pristine.
+
+    Args:
+        url: any yt-dlp-supported URL (1000+ sites).
+        kind: "audio" (default) or "video".
+        quality: "best" (default) or an explicit yt-dlp `-f` format selector to override.
+        max_mb: refuse files larger than this (the bytes ride in the response). Raise for big video.
+
+    Returns: {"filename", "ext", "format", "size_bytes", "content_b64"} — decode content_b64 to the file.
+    """
+    import base64
+
+    if quality and quality != "best":
+        fmt = quality
+    elif kind == "video":
+        fmt = "bestvideo*+bestaudio/best"
+    else:  # audio: prefer m4a, never force a re-encode
+        fmt = "bestaudio[ext=m4a]/bestaudio/best"
+
+    with tempfile.TemporaryDirectory() as tmp:
+        cmd = [
+            "yt-dlp", "--js-runtimes", "node", "--no-warnings",
+            "-f", fmt, "-o", f"{tmp}/media.%(ext)s", url,
+        ]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if result.returncode != 0:
+            raise RuntimeError(f"yt-dlp failed: {result.stderr.strip()[:500]}")
+        files = [p for p in Path(tmp).iterdir() if p.is_file()]
+        if not files:
+            raise RuntimeError(f"no media file produced for {url}")
+        f = max(files, key=lambda p: p.stat().st_size)
+        size = f.stat().st_size
+        if size > max_mb * 1024 * 1024:
+            raise RuntimeError(
+                f"file is {size // (1024*1024)}MB, over max_mb={max_mb}. Raise max_mb to allow it."
+            )
+        return {
+            "filename": f.name,
+            "ext": f.suffix.lstrip("."),
+            "format": fmt,
+            "size_bytes": size,
+            "content_b64": base64.b64encode(f.read_bytes()).decode(),
+        }
+
+
+@mcp.tool
 def pdf_extract_text(source: str) -> str:
     """Extract plain text from a PDF using Stirling-PDF's text extractor.
 

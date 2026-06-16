@@ -12,10 +12,15 @@ Lives on a Proxmox LXC. Exposes one URL. Any MCP-capable agent connects and gets
 | `fetch_page` | Crawl4AI (Playwright) | JS-rendered page → clean markdown |
 | `convert_document` | Markitdown | PDF/DOCX/PPTX/XLSX/HTML/image-OCR → markdown |
 | `extract_video` | yt-dlp | Metadata + auto-transcript from YouTube/podcasts/1000+ sites |
+| `download_media` | yt-dlp + Node | Download the real audio/video **file** (base64). Genuine best stream — no low-quality `format 18` fallback |
 | `pdf_extract_text` | Stirling-PDF | Plain text from PDF |
 | `transcribe_audio` | whisper.cpp + Vulkan | GPU STT (AMD 5700 XT). All standard models tiny→large-v3-turbo |
 | `cf_*` (17 tools) | whit3rabbit/camoufox-mcp | Stealth Firefox automation. Use when normal browsers get bot-blocked |
 | `ping` | — | Health check / hot-reload smoke test |
+
+The three media tools split by what they hand back: `extract_video` → metadata/transcript,
+`transcribe_audio` → text, `download_media` → the actual file (base64). `download_media` uses the
+container's Node JS runtime so yt-dlp sees full formats (avoids YouTube's degraded `format 18`).
 
 Browser tools split by job:
 - `fetch_page` → fast Crawl4AI fetch with JS rendering, the 90% case
