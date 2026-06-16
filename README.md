@@ -95,7 +95,7 @@ These cost us a lot of rebuilds. Documented so you don't repeat them.
 
 6. **whisper.cpp + Vulkan needs the full SPIR-V chain.** `glslc` (only in Ubuntu 24.04+ main), `spirv-headers`, `glslang-dev`, `libshaderc-dev`. Use `ubuntu:24.04` as the builder base. Match runtime base for glibc (whisper-cli built on 24.04 needs `GLIBC_2.38` / `GLIBCXX_3.4.32`).
 
-7. **Constrain `cmake --build -j` parallelism.** Whisper's Vulkan headers are template-heavy — each `cc1plus` peaks at ~3 GB. All-cores parallel will OOM in an 8 GB LXC. `-j4` keeps it under the cap.
+7. **Constrain `cmake --build -j` parallelism.** Whisper's Vulkan headers are template-heavy — each `cc1plus` peaks at ~3 GB. All-cores parallel will OOM in an 8 GB LXC. `-j4` keeps it under the cap. Even at `-j4` this compile can OOM if the other containers are running and eating RAM — so don't trigger a whisper rebuild unless you mean to. The sneaky way to trigger it accidentally is `docker compose up --build gateway`: because `gateway depends_on whisper`, that rebuilds whisper too. To redeploy only a gateway code change, use `docker compose build gateway && docker compose up -d --no-deps gateway` (see Operations).
 
 8. **First call to `cf_browse` after a `docker compose up --build` may fail** with "Version information not found at .../version.json" — Firefox download race. Retry once; subsequent calls work.
 
@@ -113,8 +113,13 @@ docker compose restart gateway
 # Pull latest base images (Stirling/SearXNG/Crawl4AI)
 docker compose pull && docker compose up -d
 
-# Rebuild gateway after adding a tool
-docker compose up -d --build gateway
+# Rebuild gateway after a code/dep change.
+# IMPORTANT: build then recreate with --no-deps. Do NOT use `up --build gateway`:
+# gateway `depends_on: whisper`, so `up --build` ALSO rebuilds the whisper image,
+# whose whisper.cpp+Vulkan compile OOM-kills cc1plus in an 8 GB LXC (see gotcha #7).
+# The gateway image only needs the new server.py copied — a ~3 s rebuild.
+docker compose build gateway          # builds gateway only, never touches deps
+docker compose up -d --no-deps gateway  # recreates only the gateway container
 
 # Verify all tools are live
 docker exec tb-gateway python -c "
@@ -134,7 +139,7 @@ The scalable pattern. When a capability gap repeats across agents:
 1. If it needs a new container: add to `docker-compose.yml` on the `toolbox` network.
 2. If it's a Python dep: add to `gateway/requirements.txt`.
 3. Add a `@mcp.tool` function to `gateway/server.py`. Write the docstring for a small model — first line is the summary an agent reads to decide whether to call it.
-4. `docker compose up -d --build gateway` (~5-10 sec downtime, well within MCP reconnect window).
+4. `docker compose build gateway && docker compose up -d --no-deps gateway` (~3 s rebuild + ~5-10 sec downtime, well within MCP reconnect window). **Not** `up --build gateway` — that drags in a whisper Vulkan recompile that OOMs the LXC (see Operations note + gotcha #7).
 5. Connected MCP clients pick up the new tool via `tools/list_changed` notification or on next refresh. For Claude Code: `/reload-plugins`.
 
 For wrapping an external MCP server (like we did with Camoufox), mount it through FastMCP's `create_proxy()` instead of reimplementing. See `gateway/server.py` for the pattern.
