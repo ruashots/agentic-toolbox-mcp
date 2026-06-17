@@ -33,9 +33,17 @@ RUN pip install --no-cache-dir -r requirements.txt
 # postinstall scripts). pnpm 9 runs them and the global install picks up the
 # native .node binary cleanly.
 # Pin camoufox-mcp-server to a known-working 2.x to avoid surprise upstream churn.
+# Pin playwright-core too: camoufox-js@0.10.2 declares its peer as "playwright-core": "*",
+# so a rebuild floats it to the newest release. Camoufox is a matched pair — the binary
+# (currently Firefox 135 / camoufox v135.0.1) only speaks the Juggler protocol of the
+# Playwright that bundles that same Firefox (1.51, FF135). A floated-in 1.61 sends an
+# `isMobile` field in Browser.setDefaultViewport that FF135's Juggler rejects ("not
+# described in this scheme"), breaking ALL cf_browse_* tools. auto-install-peers=false
+# forces the peer to resolve to the 1.51.1 we install explicitly instead of latest.
 RUN npm install -g pnpm@9 && \
     pnpm config set global-bin-dir /usr/local/bin && \
-    pnpm add -g camoufox-mcp-server@2.0.7
+    pnpm config set auto-install-peers false && \
+    pnpm add -g playwright-core@1.51.1 camoufox-mcp-server@2.0.7
 
 COPY server.py .
 
