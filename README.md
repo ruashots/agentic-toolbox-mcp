@@ -15,12 +15,17 @@ Lives on a Proxmox LXC. Exposes one URL. Any MCP-capable agent connects and gets
 | `download_media` | yt-dlp + Node | Download the real audio/video **file** (base64). Genuine best stream — no low-quality `format 18` fallback |
 | `pdf_extract_text` | Stirling-PDF | Plain text from PDF |
 | `transcribe_audio` | whisper.cpp + Vulkan | GPU STT (AMD 5700 XT). All standard models tiny→large-v3-turbo |
+| `synthesize_speech` | OmniVoice (CPU) | TTS in 600+ languages, optional voice cloning from a 3-10 s sample |
 | `cf_*` (17 tools) | whit3rabbit/camoufox-mcp | Stealth Firefox automation. Use when normal browsers get bot-blocked |
 | `ping` | — | Health check / hot-reload smoke test |
 
 The three media tools split by what they hand back: `extract_video` → metadata/transcript,
 `transcribe_audio` → text, `download_media` → the actual file (base64). `download_media` uses the
 container's Node JS runtime so yt-dlp sees full formats (avoids YouTube's degraded `format 18`).
+
+Speech goes both directions: `transcribe_audio` for speech→text, `synthesize_speech` for text→speech.
+The asymmetry is deliberate and worth knowing before you plan around it — STT is GPU-accelerated and
+faster than real time, TTS runs on CPU and is slower than real time. See the TTS section below.
 
 Browser tools split by job:
 - `fetch_page` → fast Crawl4AI fetch with JS rendering, the 90% case
@@ -36,6 +41,7 @@ agents ── HTTP/MCP ──▶ tb-gateway ──┬──▶ tb-searxng
                                     ├──▶ tb-crawl4ai
                                     ├──▶ tb-stirling
                                     ├──▶ tb-whisper (AMD GPU passthrough)
+                                    ├──▶ tb-tts (CPU)
                                     └──▶ camoufox-mcp (subprocess, mounted via FastMCP)
 ```
 
@@ -97,7 +103,45 @@ These cost us a lot of rebuilds. Documented so you don't repeat them.
 
 7. **Constrain `cmake --build -j` parallelism.** Whisper's Vulkan headers are template-heavy — each `cc1plus` peaks at ~3 GB. All-cores parallel will OOM in an 8 GB LXC. `-j4` keeps it under the cap. Even at `-j4` this compile can OOM if the other containers are running and eating RAM — so don't trigger a whisper rebuild unless you mean to. The sneaky way to trigger it accidentally is `docker compose up --build gateway`: because `gateway depends_on whisper`, that rebuilds whisper too. To redeploy only a gateway code change, use `docker compose build gateway && docker compose up -d --no-deps gateway` (see Operations).
 
-8. **First call to `cf_browse` after a `docker compose up --build` may fail** with "Version information not found at .../version.json" — Firefox download race. Retry once; subsequent calls work.
+8. **TTS is CPU-only because the GPU is AMD.** OmniVoice is a PyTorch model with CUDA / Apple MPS / Intel XPU backends and no ROCm path. Don't try to point it at the AMD card — the reason whisper works on that GPU is that whisper.cpp ships hand-written Vulkan compute shaders, which is a completely different approach. The upside is that OmniVoice's dependency list has no `flash-attn` and no `vllm`, which is what makes a plain CPU build possible at all; if a future TTS model pins either, it won't run here.
+
+9. **First call to `cf_browse` after a `docker compose up --build` may fail** with "Version information not found at .../version.json" — Firefox download race. Retry once; subsequent calls work.
+
+## Text-to-speech
+
+`synthesize_speech` wraps [OmniVoice](https://github.com/k2-fsa/OmniVoice) — Apache-2.0, 600+
+languages, zero-shot voice cloning from a short reference clip.
+
+**It runs on CPU, and that is a deliberate trade.** OmniVoice ships CUDA, Apple MPS and Intel XPU
+backends; there is no ROCm path, and this stack's GPU is AMD. The options were "no TTS in the
+toolbox" or "TTS that is slower than real time." The second is more useful, because what agents
+actually ask for is narration and voiceover — batch jobs where a few minutes of wall clock is
+irrelevant. What it is *not* suitable for is anything interactive or streaming.
+
+Measured on an 8-core CPU allocation, at the default 32 diffusion steps:
+
+| Mode | Real-time factor | 60 s of speech takes |
+|---|---|---|
+| Default voice, `steps=16` | ~2.2x | ~2 min |
+| Default voice, `steps=32` | ~4.5x | ~4.5 min |
+| Cloned voice, `steps=32` | ~7x | ~7 min |
+
+Two things that matter more than the raw numbers:
+
+**Batch the whole script in one call.** Per-call overhead dominates short requests — a 3.5 s line
+measured 13x real time while a 40 s passage measured 6.9x. Same model, same settings. Synthesising
+line by line wastes most of the compute.
+
+**Pass `reference_text` when cloning.** Without it the model transcribes the reference clip with
+Whisper first, which on CPU costs more than the synthesis. With it, cloning is a single pass.
+
+The model is ~3 GB and downloads on first use into the `tts-models` volume. A cold start (download
+included) is ~35 s; afterwards the model stays resident and warm loads are ~1.5 s. Requests are
+serialised — the model is not re-entrant, and parallel requests on a CPU box would only contend for
+the same cores.
+
+For voice cloning, use a 3-10 second reference in the *same language* as the text you want spoken.
+A cross-language reference works, but the output carries the reference language's accent.
 
 ## Operations
 

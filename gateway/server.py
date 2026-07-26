@@ -10,6 +10,7 @@ Adding a new tool:
 Exposed at: http://<host>:8000/mcp (streamable HTTP transport)
 """
 
+import base64
 import json
 import os
 import subprocess
@@ -25,13 +26,15 @@ SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://searxng:8080")
 CRAWL4AI_URL = os.environ.get("CRAWL4AI_URL", "http://crawl4ai:11235")
 STIRLING_URL = os.environ.get("STIRLING_URL", "http://stirling-pdf:8080")
 WHISPER_URL = os.environ.get("WHISPER_URL", "http://whisper:8000")
+TTS_URL = os.environ.get("TTS_URL", "http://tts:8000")
 
 mcp = FastMCP(
     "toolbox",
     instructions=(
         "Homelab toolbox: search the web, fetch JS-rendered pages, convert "
         "documents to markdown, manipulate PDFs, extract video metadata and "
-        "transcripts. Prefer these tools over training-knowledge guesses when "
+        "transcripts, and synthesise speech (with optional voice cloning). "
+        "Prefer these tools over training-knowledge guesses when "
         "the user needs fresh, specific, or fully-rendered content."
     ),
 )
@@ -292,6 +295,90 @@ def transcribe_audio(
             )
         r.raise_for_status()
         return r.json()
+
+
+@mcp.tool
+def synthesize_speech(
+    text: str,
+    voice_reference: str | None = None,
+    reference_text: str | None = None,
+    steps: int = 32,
+    normalize_numbers: bool = False,
+) -> dict:
+    """Turn text into speech (OmniVoice, 600+ languages, optional voice cloning).
+
+    Runs on CPU, so it is slower than real time — budget roughly 5x the audio length
+    at the default quality, ~2x at steps=16. That is fine for narration, voiceover and
+    audiobook-style batches; it is not suitable for interactive or streaming use.
+
+    Cost is dominated by a fixed per-call overhead, so synthesise a whole script in one
+    call rather than line by line — it is several times faster for the same audio.
+
+    Args:
+        text: what to say. Any of the model's 600+ languages; it is inferred from the text.
+        voice_reference: optional 3-10 second sample of a voice to clone. Accepts an
+            http(s) URL or base64 (raw or `data:` URL). Omit for the model's default voice.
+            Use a reference in the same language as `text` — a mismatch carries the
+            reference language's accent into the output.
+        reference_text: transcript of `voice_reference`. Optional but recommended: without
+            it the model runs Whisper to transcribe the clip, which on CPU costs more than
+            the synthesis itself.
+        steps: diffusion steps, 1-64. 32 (default) for quality, 16 for roughly double speed.
+        normalize_numbers: expand digits to words before speaking ("123" -> "one hundred
+            twenty-three"). Leave off if the text already spells numbers out.
+
+    Returns:
+        {audio_b64, format: "wav", sample_rate, audio_seconds, generate_seconds,
+         realtime_factor, cloned} — decode `audio_b64` and write it to a .wav file.
+    """
+    files: dict = {}
+    tmp_ref = None
+
+    if voice_reference:
+        if voice_reference.startswith(("http://", "https://")):
+            r = httpx.get(voice_reference, timeout=120, follow_redirects=True)
+            r.raise_for_status()
+            ref_bytes = r.content
+        else:
+            payload = voice_reference
+            if payload.startswith("data:"):
+                payload = payload.split(",", 1)[-1]
+            try:
+                ref_bytes = base64.b64decode(payload, validate=True)
+            except Exception as exc:
+                raise RuntimeError(
+                    "voice_reference must be an http(s) URL or base64 audio"
+                ) from exc
+        if not ref_bytes:
+            raise RuntimeError("voice_reference resolved to empty audio")
+        tmp_ref = ref_bytes
+        files["reference"] = ("reference.wav", tmp_ref, "audio/wav")
+
+    data: dict = {
+        "text": text,
+        "steps": str(steps),
+        "normalize_text": str(bool(normalize_numbers)).lower(),
+    }
+    if reference_text:
+        data["reference_text"] = reference_text
+
+    r = httpx.post(
+        f"{TTS_URL}/synthesize",
+        data=data,
+        files=files or None,
+        timeout=3600,
+    )
+    r.raise_for_status()
+
+    return {
+        "audio_b64": base64.b64encode(r.content).decode(),
+        "format": "wav",
+        "sample_rate": int(r.headers.get("X-Sample-Rate", 24000)),
+        "audio_seconds": float(r.headers.get("X-Audio-Seconds", 0)),
+        "generate_seconds": float(r.headers.get("X-Generate-Seconds", 0)),
+        "realtime_factor": float(r.headers.get("X-Realtime-Factor", 0)),
+        "cloned": r.headers.get("X-Cloned") == "1",
+    }
 
 
 # Mount whit3rabbit/camoufox-mcp's 21 browser-automation tools into our surface.

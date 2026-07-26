@@ -24,7 +24,7 @@ services:
       - ENABLE_GPU=false
 
   stirling-pdf:
-    image: frooodle/s-pdf:latest
+    image: frooodle/s-pdf@sha256:b75b5ae2fcb75948f468718ed4c0bd499a8cafc9daf7f90f4c1e0e5a6acf9df8  # Stirling 2.11.0 pinned 2026-06-02 (was :latest; auto-broke auth+endpoint)
     container_name: tb-stirling
     restart: unless-stopped
     networks: [toolbox]
@@ -35,6 +35,7 @@ services:
       - stirling-logs:/logs
     environment:
       - DOCKER_ENABLE_SECURITY=false
+      - SECURITY_ENABLELOGIN=false
       - LANGS=en_US
 
   whisper:
@@ -51,6 +52,17 @@ services:
     volumes:
       - whisper-models:/models
 
+  tts:
+    build: ./tts
+    container_name: tb-tts
+    restart: unless-stopped
+    networks: [toolbox]
+    # CPU-only by design: OmniVoice has no ROCm path and this host's GPU is AMD.
+    # Give it real cores — synthesis is the one CPU-bound tool in the stack.
+    cpus: 8
+    volumes:
+      - tts-models:/models
+
   gateway:
     build: ./gateway
     container_name: tb-gateway
@@ -63,6 +75,7 @@ services:
       - CRAWL4AI_URL=http://crawl4ai:11235
       - STIRLING_URL=http://stirling-pdf:8080
       - WHISPER_URL=http://whisper:8000
+      - TTS_URL=http://tts:8000
       - TOOLBOX_TOKEN=${TOOLBOX_TOKEN:-}
     # No volume mount for /root/.cache — camoufox-mcp's startup rmdir's its own cache
     # subdir, which EBUSY's on Docker volume mount points. Mounting the parent
@@ -75,6 +88,7 @@ services:
       - crawl4ai
       - stirling-pdf
       - whisper
+      - tts
 
 networks:
   toolbox:
@@ -84,3 +98,4 @@ volumes:
   stirling-data:
   stirling-logs:
   whisper-models:
+  tts-models:

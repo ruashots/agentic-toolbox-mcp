@@ -79,6 +79,7 @@ Once `ping()` works, you have the full toolset. Continue.
 | Get metadata + auto-transcript from a video URL | `extract_video` | yt-dlp under the hood, 1000+ sites supported. Returns title, uploader, duration, description, transcript-if-available. **Try this FIRST** before transcribing — many videos have free auto-captions. |
 | Download the actual audio/video **file** from a URL | `download_media` | yt-dlp + the container's Node JS runtime → grabs the genuine best stream (no degraded `format 18` fallback) and takes it as-is (no re-encode). Returns the file base64 (`content_b64`) — decode and save. `kind="audio"`/`"video"`, `max_mb` cap. Use when you need the media *itself*, not metadata/transcript/text. |
 | Transcribe audio/video when there's no auto-transcript | `transcribe_audio` | Local Whisper on GPU. See **Model selection** below — bigger isn't always better. |
+| I need to turn text INTO speech | `synthesize_speech` | CPU-bound. Batch the whole script in ONE call — per-call overhead dominates |
 | Sanity-check the toolbox is reachable | `ping` | Returns `"pong"`. |
 
 ---
@@ -124,6 +125,25 @@ Models are downloaded lazily on first use (cached after). Pick based on content 
 | Non-English speech | drop the `.en` (use `tiny`/`base`/`small`/`medium`/`large-v3`) | Multilingual variants required for auto-detect or non-English |
 
 If you don't know what's in it: start with `base.en` to see the language and shape. Re-transcribe with the right model if you need precision.
+
+### `synthesize_speech` — how to not waste ten minutes
+
+Three rules, in order of how much time they save you:
+
+1. **One call for the whole script.** Per-call overhead dominates. A 3.5 s line measured 13x real
+   time; a 40 s passage measured 6.9x. Splitting a narration into lines can cost several times
+   more wall clock for identical audio. If you need per-line files, synthesise once and split the
+   returned WAV locally.
+2. **Always pass `reference_text` when you pass `voice_reference`.** Without it the model runs
+   Whisper on the reference first, which on CPU costs more than the synthesis you actually wanted.
+3. **`steps=16` when the words matter more than the delivery** (drafts, alt takes, checking
+   pronunciation). Roughly double the speed. Use the default 32 for anything a human will hear.
+
+It is slower than real time — budget ~5x the audio length. Tell the user that before you start a
+long job rather than after. For anything interactive or streaming, this is the wrong tool.
+
+Voice cloning wants a 3-10 second reference in the same language as the text. Longer references do
+not help and can hurt. A reference in a different language works but carries its accent across.
 
 ### `extract_video` before `transcribe_audio`
 
