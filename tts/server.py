@@ -1,7 +1,10 @@
 """tb-tts: OmniVoice text-to-speech HTTP wrapper (CPU).
 
-The model loads once on first request and stays resident: a cold load pulls ~3 GB
-of weights from HuggingFace into /models, a warm load is ~1.5 s. Synthesis is
+The model loads once on first request and stays resident: the first load ever pulls
+~3 GB of weights from Hugging Face into /models, a warm load is ~1.5 s. The model is
+pinned to one Hugging Face revision: it is downloaded once at that revision, and
+after that loading never contacts Hugging Face, so a new upstream model is never
+taken by itself and the service starts without internet access. Synthesis is
 serialised behind a lock: the model is not re-entrant and concurrent requests on a
 CPU box would only fight each other for the same cores.
 
@@ -24,16 +27,37 @@ from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import Response
 
 SAMPLE_RATE = 24000
+# Pinned revisions. To move to a newer one on purpose, see docs/operations.md.
 MODEL_ID = "k2-fsa/OmniVoice"
+MODEL_REVISION = "c5fdb5ccb189668d56333f77ba2629f4cd7535f4"
+# Only used to transcribe a voice-cloning clip when no reference_text is sent.
+ASR_ID = "openai/whisper-large-v3-turbo"
+ASR_REVISION = "41f01f3fe87f28c78e2fbf8b568835947dd65ed9"
 
 app = FastAPI()
 _model = None
+_asr_loaded = False
 _model_lock = asyncio.Lock()
 _infer_lock = asyncio.Lock()
 
 
+def _pinned(repo_id: str, revision: str) -> str:
+    """Local path of a model at one exact revision in the /models volume.
+
+    Downloads it the first time it is needed. Once it is in the volume this never
+    contacts Hugging Face.
+    """
+    from huggingface_hub import snapshot_download
+    from huggingface_hub.errors import LocalEntryNotFoundError
+
+    try:
+        return snapshot_download(repo_id, revision=revision, local_files_only=True)
+    except LocalEntryNotFoundError:
+        return snapshot_download(repo_id, revision=revision)
+
+
 async def get_model():
-    """Load once, keep resident. First call downloads weights into /models."""
+    """Load once, keep resident. The first call ever downloads the weights into /models."""
     global _model
     if _model is not None:
         return _model
@@ -43,12 +67,15 @@ async def get_model():
         from omnivoice import OmniVoice
 
         loop = asyncio.get_event_loop()
-        _model = await loop.run_in_executor(
-            None,
-            lambda: OmniVoice.from_pretrained(
-                MODEL_ID, device_map="cpu", dtype=torch.float32
-            ),
-        )
+        try:
+            _model = await loop.run_in_executor(
+                None,
+                lambda: OmniVoice.from_pretrained(
+                    _pinned(MODEL_ID, MODEL_REVISION), device_map="cpu", dtype=torch.float32
+                ),
+            )
+        except Exception as exc:
+            raise HTTPException(503, f"could not load the voice model: {exc}") from exc
         return _model
 
 
@@ -60,6 +87,7 @@ async def synthesize(
     reference_text: str | None = Form(None),
     normalize_text: bool = Form(False),
 ):
+    global _asr_loaded
     if not text.strip():
         raise HTTPException(400, "text is empty")
     if steps < 1 or steps > 64:
@@ -82,6 +110,16 @@ async def synthesize(
         started = time.time()
         async with _infer_lock:
             loop = asyncio.get_event_loop()
+            if reference is not None and not reference_text and not _asr_loaded:
+                # Load the pinned transcription model ourselves; left to OmniVoice it
+                # would download the newest one.
+                try:
+                    await loop.run_in_executor(
+                        None, lambda: model.load_asr_model(_pinned(ASR_ID, ASR_REVISION), device="cpu")
+                    )
+                except Exception as exc:
+                    raise HTTPException(503, f"could not load the transcription model: {exc}") from exc
+                _asr_loaded = True
             try:
                 audio = await loop.run_in_executor(None, lambda: model.generate(**kwargs))
             except Exception as exc:  # surface the real cause, not a bare 500

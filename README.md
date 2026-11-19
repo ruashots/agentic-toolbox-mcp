@@ -189,11 +189,12 @@ What leaves your machine:
 - The watcher's test jobs: a search for "wikipedia" and visits to wikipedia.org and
   python.org every 10 minutes, and the details and audio of one 19-second YouTube
   video every 6 hours.
-- Model downloads from Hugging Face. Each Whisper model downloads the first time it
-  is used. The voice model downloads on the first speech request, and the speech
-  service asks Hugging Face for a newer version each time it starts. Cloning a voice
-  without the clip's transcript also downloads a Whisper model (about 1.6 GB) into the
-  speech service.
+- Model downloads from Hugging Face, each only the first time it is needed: a
+  Whisper model the first time it is used, the voice model on the first speech
+  request, and, if you clone a voice without the clip's transcript, a Whisper model
+  (about 1.6 GB) for the speech service. The speech models are pinned to one
+  version, and once they are downloaded the speech service starts without
+  contacting Hugging Face.
 - A lookup of your public IP address (api.ipify.org, or a similar service if that
   fails) each time the browser starts. Camoufox uses it to match the browser's time
   zone and language to your IP.
@@ -228,8 +229,7 @@ docker compose up -d
 ```
 
 For Whisper models, use `whisper-models` in place of `tts-models`. The speech service
-still asks Hugging Face whether the voice model has changed when it starts, and
-downloads it again if it has.
+loads the restored model as it is, without downloading anything.
 
 `docker compose down -v` removes the containers and every volume, which deletes the
 downloaded models too.

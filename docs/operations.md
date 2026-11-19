@@ -148,6 +148,7 @@ stayed green. Now these are pinned and checked:
 | whisper.cpp | git commit | `whisper/Dockerfile` (`WHISPER_CPP_COMMIT`) |
 | OmniVoice | git commit | `tts/Dockerfile` (`OMNIVOICE_COMMIT`) |
 | Whisper and TTS Python packages, PyTorch included | full lock files | `whisper/requirements.lock`, `tts/requirements.lock` |
+| OmniVoice voice model, and the Whisper model it uses to transcribe cloning clips | Hugging Face revision; downloaded once, then loaded from the `tts-models` volume without contacting Hugging Face | `tts/server.py` (`MODEL_REVISION`, `ASR_REVISION`) |
 
 The gateway build also launches the browser and renders a page
 (`gateway/camoufox-mcp/selftest.mjs`). If the driver and the browser do not work
@@ -160,12 +161,10 @@ Not pinned, on purpose or by nature:
 - **The GeoIP database** the browser uses to match its time zone and language to
   your public IP is downloaded at build time. Its only source keeps just its last
   two releases, so a checksum would break within days.
-- **Model files** download from Hugging Face the first time they are needed:
-  Whisper models into the `whisper-models` volume, the OmniVoice voice model into
-  `tts-models`. They are not checksum-pinned, and the speech service asks Hugging
-  Face for a newer voice model each time it starts and downloads it if it changed.
-  Cloning a voice without the clip's transcript also downloads
-  `openai/whisper-large-v3-turbo` (about 1.6 GB) into `tts-models`.
+- **Whisper models for transcription** download from Hugging Face the first time
+  each one is used, into the `whisper-models` volume, from the main branch of
+  `ggerganov/whisper.cpp`. They are not pinned to a revision, but a model that is
+  already in the volume is never downloaded again.
 - **The NodeSource setup script**, which adds Node's package source, is fetched at
   build time. The Node package it installs is pinned.
 
@@ -196,6 +195,11 @@ Per part:
   (Crawl4AI: in `crawl4ai/Dockerfile`; its three privacy edits must still apply or
   the build fails).
 - **whisper.cpp, OmniVoice:** change the commit in the Dockerfile `ARG`.
+- **The voice model** (or the model that transcribes cloning clips): take the new
+  commit from the model's Hugging Face page (Files and versions, then History), set
+  `MODEL_REVISION` (or `ASR_REVISION`) in `tts/server.py`, and rebuild `tts`. The next
+  speech request downloads that revision; the old one stays in the `tts-models`
+  volume until you remove it.
 - **The browser driver:** in a scratch folder, run
   `pnpm add camoufox-mcp-server@X playwright-core@Y` with `auto-install-peers=false`,
   then copy `package.json` and `pnpm-lock.yaml` into `gateway/camoufox-mcp/`. Check
