@@ -24,6 +24,9 @@ services:
       - ./searxng:/etc/searxng:rw
     environment:
       - SEARXNG_BASE_URL=http://searxng:8080/
+      # Without this the image chowns ./searxng in your clone to its own user,
+      # and a later `git pull` cannot update searxng/settings.yml.
+      - FORCE_OWNERSHIP=false
       - UWSGI_WORKERS=4
       - UWSGI_THREADS=4
 
