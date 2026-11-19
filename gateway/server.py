@@ -48,11 +48,148 @@ mcp = FastMCP(
         "documents to markdown, manipulate PDFs, extract video metadata and "
         "transcripts, and synthesise speech (with optional voice cloning). "
         "Prefer these tools over training-knowledge guesses when "
-        "the user needs fresh, specific, or fully-rendered content."
+        "the user needs fresh, specific, or fully-rendered content. "
+        "Every tool is tested with a real job on a schedule. If a tool fails, "
+        "its error says whether it is a known outage, since when, and which "
+        "tool to use instead; call toolbox_status to see the state of every tool "
+        "before retrying."
     ),
 )
 
 md_converter = MarkItDown()
+
+
+# ---------------------------------------------------------------------------
+# Health: what the watcher (tb-watch, watch.py) last saw, told to agents.
+# ---------------------------------------------------------------------------
+STATUS_FILE = Path(os.environ.get("STATUS_FILE", "/health/status.json"))
+WATCHER_STALE_S = 900
+
+# For each check: what an agent should use instead while it is failing.
+_ALTERNATIVES = {
+    "search_web": "No other search tool here. As a fallback, fetch_page a search results page "
+                  "(e.g. https://html.duckduckgo.com/html/?q=your+terms).",
+    "fetch_page": "Use cf_browse (Camoufox browser) for the same URL.",
+    "cf_browse": "Use fetch_page (Crawl4AI) for ordinary pages; it has no stealth for bot-protected sites.",
+    "convert_document": "For PDFs, use pdf_extract_text.",
+    "pdf_extract_text": "Use convert_document, which also reads PDFs.",
+    "transcribe_audio": "For YouTube and similar sites, extract_video(want_transcript=True) returns the "
+                        "site's own captions when they exist.",
+    "synthesize_speech": "No other speech tool here.",
+    "extract_video": "For a transcript, use transcribe_audio on the same URL.",
+    "download_media": "No other download tool here.",
+    "ping": "The toolbox endpoint itself is failing; every tool is affected.",
+}
+
+
+def _check_for(tool: str) -> str:
+    return "cf_browse" if tool.startswith("cf_") else tool
+
+
+def _read_status() -> dict | None:
+    try:
+        return json.loads(STATUS_FILE.read_text())
+    except Exception:
+        return None
+
+
+def _status_age_s(status: dict) -> float | None:
+    from datetime import datetime, timezone
+    try:
+        return (datetime.now(timezone.utc) - datetime.fromisoformat(status["updated"])).total_seconds()
+    except Exception:
+        return None
+
+
+def _health_note(tool: str) -> str:
+    """One paragraph for an agent whose call just failed: is this a known outage, what now."""
+    status = _read_status()
+    check = _check_for(tool)
+    alt = _ALTERNATIVES.get(check, "")
+    if not status:
+        return f"[toolbox] No health data available (the watcher is not running). {alt}".strip()
+    age = _status_age_s(status)
+    stale = age is None or age > WATCHER_STALE_S
+    t = status.get("tools", {}).get(check)
+    if not t:
+        return f"[toolbox] {alt}".strip()
+    if t.get("status") == "down":
+        since = (t.get("since") or "?")[:16].replace("T", " ")
+        msg = (f"[toolbox] KNOWN OUTAGE: {t.get('description', check)} has been failing since {since} UTC. "
+               f"Retrying will not help until it is fixed. ")
+    else:
+        last_ok = (t.get("last_ok") or "never")[:16].replace("T", " ")
+        msg = (f"[toolbox] This tool passed its last scheduled real-job check (last success {last_ok} UTC), "
+               f"so this failure may be specific to your input or transient. One retry is reasonable. ")
+    if stale:
+        msg += "(Health data is stale: the watcher has not reported recently.) "
+    return (msg + alt).strip()
+
+
+from fastmcp.exceptions import ToolError
+from fastmcp.server.middleware import Middleware
+
+
+class _ExplainFailures(Middleware):
+    """Append the health note to every failing tool call, so an agent learns at once
+    whether a tool is known broken and what to use instead, rather than retrying blind."""
+
+    async def on_call_tool(self, context, call_next):
+        tool = getattr(context.message, "name", "") or ""
+        try:
+            result = await call_next(context)
+            # Proxied tools (the cf_* browser tools) report failure as an error result
+            # instead of raising. Add the same note to those.
+            if getattr(result, "is_error", False) and tool != "toolbox_status":
+                from mcp.types import TextContent
+                result.content = list(result.content or []) + [
+                    TextContent(type="text", text="\n\n" + _health_note(tool))
+                ]
+            return result
+        except Exception as e:
+            if tool == "toolbox_status":
+                raise
+            cause = e
+            while cause is not None and not isinstance(cause, httpx.ConnectError):
+                cause = cause.__cause__ or cause.__context__
+            prefix = "The service behind this tool is not reachable. " if cause is not None else ""
+            raise ToolError(f"{prefix}{e}\n\n{_health_note(tool)}") from e
+
+
+mcp.add_middleware(_ExplainFailures())
+
+
+@mcp.tool
+def toolbox_status() -> dict:
+    """State of every toolbox tool, from scheduled checks that run one real job per tool.
+
+    Call this when a tool fails, or before relying on a tool for a long task.
+    status is "up", "down" (known outage, retrying will not help) or "unknown"
+    (not checked yet). All cf_* browser tools share one browser and are covered
+    by the cf_browse check.
+    """
+    status = _read_status()
+    if not status:
+        return {"watcher": "not running: no health data", "tools": {}}
+    age = _status_age_s(status)
+    out = {}
+    for name, t in status.get("tools", {}).items():
+        out[name] = {
+            "what": t.get("description"),
+            "status": t.get("status"),
+            "since": t.get("since"),
+            "last_check": t.get("last_check"),
+            "last_ok": t.get("last_ok"),
+            "checked_every_s": t.get("interval_s"),
+        }
+        if t.get("status") != "up":
+            out[name]["last_error"] = t.get("last_error")
+            out[name]["use_instead"] = _ALTERNATIVES.get(name)
+    return {
+        "watcher": "ok" if age is not None and age <= WATCHER_STALE_S else f"stale: last report {age and int(age)} s ago",
+        "updated": status.get("updated"),
+        "tools": out,
+    }
 
 
 @mcp.tool

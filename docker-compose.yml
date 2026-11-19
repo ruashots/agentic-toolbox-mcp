@@ -77,6 +77,8 @@ services:
       - WHISPER_URL=http://whisper:8000
       - TTS_URL=http://tts:8000
       - TOOLBOX_TOKEN=${TOOLBOX_TOKEN:-}
+    volumes:
+      - tb-health:/health:ro   # written by tb-watch; read to tell agents which tools are down
     # The Camoufox browser is baked into the image at build time (gateway/Dockerfile).
     # No volume for /root/.cache, and nothing is downloaded at run time.
     depends_on:
@@ -85,6 +87,23 @@ services:
       - stirling-pdf
       - whisper
       - tts
+
+  # Runs one real job per tool on a schedule (see gateway/watch.py) and writes the
+  # result for the gateway, which explains failures to agents. Same image as the
+  # gateway (same pinned client library and fixtures).
+  watch:
+    build: ./gateway
+    image: toolbox-watch
+    container_name: tb-watch
+    restart: unless-stopped
+    networks: [toolbox]
+    command: ["python", "watch.py"]
+    volumes:
+      - tb-health:/health
+    environment:
+      - GATEWAY_MCP_URL=http://gateway:8000/mcp
+    depends_on:
+      - gateway
 
 networks:
   toolbox:
@@ -95,3 +114,4 @@ volumes:
   stirling-logs:
   whisper-models:
   tts-models:
+  tb-health:
