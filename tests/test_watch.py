@@ -80,3 +80,27 @@ def test_long_errors_are_cut_to_600_characters(status_file):
     state = watch.State()
     state.record("ping", ok=False, duration=0.1, error="x" * 5000)
     assert len(state.tools["ping"]["last_error"]) == 600
+
+
+class _Result:
+    """Just enough of an MCP tool result for the content checks."""
+    def __init__(self, text):
+        from mcp.types import TextContent
+        self.content = [TextContent(type="text", text=text)]
+        self.structured_content = None
+
+
+def test_the_browser_check_needs_the_real_page_not_just_its_url():
+    check = watch.CHECKS["cf_browse"][2]
+    check(_Result('{"url": "https://www.python.org/", "title": "Welcome to Python.org"}'))
+    for page in ('{"url": "https://www.python.org/", "title": "Just a moment..."}',
+                 '{"url": "https://www.python.org/", "title": "404 Not Found"}'):
+        with pytest.raises(AssertionError):
+            check(_Result(page))
+
+
+def test_a_check_without_a_description_does_not_crash_the_watcher(status_file, monkeypatch):
+    checks = dict(watch.CHECKS, my_new_tool=("my_new_tool", {}, watch.expect_contains("ok"), 600, 30))
+    monkeypatch.setattr(watch, "CHECKS", checks)
+    state = watch.State()
+    assert state.tools["my_new_tool"]["description"] == "my_new_tool"

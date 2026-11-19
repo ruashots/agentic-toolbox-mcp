@@ -88,8 +88,9 @@ CHECKS = {
     "fetch_page": ("fetch_page", {"url": PAGE_PROBE}, expect_contains("Wikipedia"), 600, 120),
     # python.org loads a tracker that DNS filters (AdGuard Home, Pi-hole) commonly block,
     # so behind such a filter this also catches the browser guard failing whole pages
-    # over a DNS-blocked sub-request.
-    "cf_browse": ("cf_browse", {"url": "https://www.python.org/", "timeout": 60000}, expect_contains("Python"), 600, 150),
+    # over a DNS-blocked sub-request. The page title, not just "Python": every answer
+    # repeats the URL, so a challenge or error page would also contain "python".
+    "cf_browse": ("cf_browse", {"url": "https://www.python.org/", "timeout": 60000}, expect_contains("Welcome to Python.org"), 600, 150),
     "convert_document": ("convert_document", {"source": "/app/fixtures/check.html"}, expect_contains("4K9TQ"), 1800, 60),
     "pdf_extract_text": ("pdf_extract_text", {"source": "/app/fixtures/check.pdf"}, expect_contains("7Q2Z"), 1800, 90),
     "transcribe_audio": ("transcribe_audio", {"source": "/app/fixtures/check.wav", "model": "base.en"}, expect_contains("health check"), 3600, 300),
@@ -148,7 +149,7 @@ class State:
             t.pop("notified", None)
             t.setdefault("consecutive_failures", 0)
             t["interval_s"] = interval
-            t["description"] = DESCRIPTIONS[name]
+            t["description"] = DESCRIPTIONS.get(name, name)
 
     def save(self):
         payload = {
