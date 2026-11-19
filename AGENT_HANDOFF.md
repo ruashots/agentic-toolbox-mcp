@@ -1,66 +1,93 @@
 # Using the toolbox
 
-A shared MCP gateway is (or is about to be) available that exposes web/doc/media/browser-automation tools to any agent on the same network. This document tells you how to get yourself wired into it, which tool to pick when, how to compose them into common workflows, and which gotchas to avoid.
+For AI agents. A shared MCP server, the toolbox, is (or is about to be) available on
+the user's network. It gives you web search, page reading, a stealth browser,
+document and PDF conversion, video tools, transcription and text-to-speech. This
+document tells you how to connect yourself to it, which tool to pick when, how to
+combine them, and what to watch out for.
 
 ---
 
 ## Before you start
 
-Check your tool surface. If `mcp__toolbox__*` tools are already there, you're set — skip to **Capability map** and start working.
+Check your tool list. If `mcp__toolbox__*` tools are already there, you are set: skip
+to **Capability map** and start working.
 
-If they're missing, don't try to call them (they'll just return `Unknown tool`). Don't probe the network or guess at state. Ask the user one grounding question first:
+If they are missing, do not try to call them (you will only get `Unknown tool`), and
+do not probe the network or guess. Ask the user one question first:
 
-> "Where do we stand on the toolbox? Three possibilities I can handle:
-> 1. Nothing set up — I deploy the whole stack from scratch.
-> 2. Toolbox is already running somewhere, just not wired into me — give me the host or URL and I'll wire it.
-> 3. Already wired but my session can't see it — I'll walk through a refresh."
+> "Where do we stand on the toolbox? I can handle three cases:
+> 1. Nothing is set up: I install it from scratch.
+> 2. It runs somewhere but I am not connected: give me the host or URL and I will connect.
+> 3. I am connected but cannot see the tools: I will walk you through a refresh."
 
-Then act based on their answer.
+Then act on the answer.
 
-### (1) Nothing set up
+### (1) Nothing is set up
 
-You're going to deploy the toolbox. This is real blast radius: ~10 min build + ~5 GB image pulls + four long-running containers + optional GPU passthrough for Whisper. Confirm scope before kicking off.
+You are going to install the toolbox. That is a real commitment on the user's
+machine: a first build that downloads about 5.5 GB, about 40 GB of images and models
+on disk afterwards, and seven containers that keep running. Confirm before you
+start.
 
-Ask the user: *"Run it on this machine, or somewhere specific (LXC on Proxmox, dedicated VM, the laptop right here)?"*
+Ask the user: *"Should it run on this machine, or on another one (a home server, a
+VM)?"* It needs an x86-64 machine with Docker and Docker Compose v2, about 50 GB of
+free disk and 8 GB of RAM. No GPU is needed.
 
-Then, on the chosen host with Docker + docker-compose available:
+Then, on the chosen machine:
 
 ```bash
-git clone https://github.com/Ruashots/agentic-toolbox-mcp toolbox
-cd toolbox
+git clone https://github.com/Ruashots/agentic-toolbox-mcp.git
+cd agentic-toolbox-mcp
 docker compose up -d --build
-# Wait for "Uvicorn running on http://0.0.0.0:8000" in:
-docker compose logs -f gateway
 ```
 
-When the gateway prints `[startup] N tools registered` followed by `Uvicorn running`, grab the host's reachable IP (`hostname -I`, or whatever the user calls it on their LAN), then continue to step (2) to wire yourself in.
+Container logs are off by design, so do not wait on `docker compose logs`. When the
+build has finished, wait until the watcher reports its first checks:
 
-If the user's machine isn't a sensible host for a 24/7 stack (laptop, sandboxed environment, etc.), say so honestly — don't deploy on a bad target. Ask them to identify a host that should run it.
+```bash
+docker logs tb-watch
+```
 
-### (2) Already running, not wired into me
+Lines such as `[watch] ping: ok` and `[watch] search_web: ok` mean the toolbox works.
+Find the machine's address on the network (`hostname -I`, or the name the user knows
+it by) and continue with step (2).
 
-Ask the user: *"What's the gateway URL?"* — usual shape is `http://<host>:8000/mcp`.
+If the user's machine is a poor place for a service that runs all the time (a laptop
+that sleeps, a sandbox), say so honestly and ask which machine should run it.
 
-Once you have it:
+### (2) It runs somewhere, but you are not connected
 
-1. **Test reachability before wiring.** `curl <url>` should respond (it'll return MCP protocol JSON, not a friendly page — that's expected). If it fails with connection-refused or timeout, the toolbox isn't actually running where the user thinks; escalate back to scenario (1).
-2. **Ask about auth.** Default toolbox v1 is LAN-trust — no bearer enforced. If the user says "no auth," wire the URL bare. If they hand you a token, add `Authorization: Bearer <token>` as a header in your MCP config. Don't assume either way; ask.
-3. **Wire it into your runtime's MCP config:**
-   - Claude Code (no auth): `claude mcp add --transport http --scope user toolbox <url>`
-   - Claude Code (with bearer): `claude mcp add --transport http --scope user toolbox <url> --header "Authorization: Bearer <token>"`
-   - Other MCP-capable agents: HTTP transport pointing at `<url>`, with the bearer header if provided — exact config path varies by runtime, ask the user if you don't know yours.
-4. **Reload or restart your session** so the new tools surface. For Claude Code that's `/reload-plugins`; other runtimes vary.
-5. **Verify with `ping()`** — should return `"pong"`. If it doesn't, jump to scenario (3).
+Ask the user: *"What is the toolbox URL?"* It usually looks like
+`http://<host>:8000/mcp`.
 
-### (3) Wired but I can't see it
+Then:
 
-Your session probably cached its tool list before the toolbox was reachable, or the proxy mounts populated after your initial connection.
+1. **Check that it answers.** `curl http://<host>:8000/mcp` should come back with a
+   short JSON error that says `Client must accept text/event-stream`. That error is
+   the expected answer: the endpoint is up. If the connection is refused or times out,
+   the toolbox is not running where the user thinks; go back to (1).
+2. **Connect.** The toolbox has no login.
+   - Claude Code: `claude mcp add --transport http --scope user toolbox <url>`
+   - If the user put the toolbox behind a proxy that needs a header, add it:
+     `claude mcp add --transport http --scope user toolbox <url> --header "Authorization: Bearer <token>"`
+   - Other MCP clients: a streamable HTTP server at `<url>`. Where that setting lives
+     depends on your runtime; ask the user if you do not know.
+3. **Reload.** In Claude Code, the new tools appear in a new session. Other runtimes
+   differ.
+4. **Check with `ping`.** It returns `"pong"`. If it does not, go to (3).
 
-- Claude Code: try `/reload-plugins` first. If `mcp__toolbox__*` still doesn't appear, fully restart the Claude process (a fresh session, not just a new conversation).
-- Other runtimes: cycle the agent's MCP client connection — exact mechanism varies.
-- After the restart, `ping()` should return `"pong"`. If it still fails, the toolbox itself isn't reachable from where you're running; escalate back to (2) and confirm the URL with the user.
+### (3) Connected, but you cannot see the tools
 
-Once `ping()` works, you have the full toolset. Continue.
+Your session probably listed its tools before the toolbox was reachable.
+
+- Claude Code: start a new session. Inside a session, `/mcp` shows whether the
+  toolbox server is connected.
+- Other runtimes: reconnect the MCP client. How depends on the runtime.
+- Then `ping` should return `"pong"`. If it still fails, the toolbox is not reachable
+  from where you run: go back to (2) and confirm the URL with the user.
+
+Once `ping` works, you have every tool. Carry on.
 
 ---
 
@@ -68,174 +95,228 @@ Once `ping()` works, you have the full toolset. Continue.
 
 | You need to... | Use | Notes |
 |---|---|---|
-| Search the web for current information | `search_web` | Federated across 30+ engines, no rate limits, returns title/url/snippet |
-| Read a normal web page | `fetch_page` | JS-rendered via Crawl4AI/Playwright. Returns clean markdown. Default choice for "give me the content at this URL." |
-| Read a page that blocks normal browsers | `cf_browse` | Camoufox stealth Firefox. Use when `fetch_page` returns empty, a challenge page, or "checking your browser." See **Selection rules** below. |
-| Drive a page through multiple steps (click, fill, navigate) | `cf_browse_session_start` → `cf_browse_session_navigate`/`action`/`snapshot` → `cf_browse_session_close` | Stateful browser session. Use for "click load-more then scrape" or auth flows. |
-| Take a screenshot of a page | `cf_browse_screenshot` | Returns PNG/JPEG. Pair with your own vision capability to reason about it. |
-| Extract structured fragments from a page | `cf_browse_links` / `cf_browse_forms` / `cf_browse_outline` / `cf_browse_find` | Cheaper than full content fetch when you only want one shape of data. |
-| Convert a document to markdown | `convert_document` | URL or local path. Handles PDF/DOCX/PPTX/XLSX/HTML/images-with-OCR. **For PDFs use this for structured markdown.** |
-| Get plain text from a PDF | `pdf_extract_text` | Cleaner word spacing than `convert_document` for column PDFs. Use this for "give me the raw readable text." |
-| Get metadata + auto-transcript from a video URL | `extract_video` | yt-dlp under the hood, 1000+ sites supported. Returns title, uploader, duration, description, transcript-if-available. **Try this FIRST** before transcribing — many videos have free auto-captions. |
-| Download the actual audio/video **file** from a URL | `download_media` | yt-dlp + the container's Node JS runtime → grabs the genuine best stream (no degraded `format 18` fallback) and takes it as-is (no re-encode). Returns the file base64 (`content_b64`) — decode and save. `kind="audio"`/`"video"`, `max_mb` cap. Use when you need the media *itself*, not metadata/transcript/text. |
-| Transcribe audio/video when there's no auto-transcript | `transcribe_audio` | Local Whisper on GPU. See **Model selection** below — bigger isn't always better. |
-| I need to turn text INTO speech | `synthesize_speech` | CPU-bound. Batch the whole script in ONE call — per-call overhead dominates |
-| Sanity-check the toolbox is reachable | `ping` | Returns `"pong"`. |
+| Search the web for current information | `search_web` | Meta-search over several engines. Returns title, url, snippet. An empty list means the query really had no hits: if the engines themselves fail, the tool raises an error and names them. |
+| Read a normal web page | `fetch_page` | Rendered in a real browser by Crawl4AI, returned as clean markdown. The default for "give me what is at this URL". |
+| Read a page that blocks normal browsers | `cf_browse` | Camoufox, a stealth Firefox. Use it when `fetch_page` returns almost nothing, a challenge page, or "checking your browser". See **Selection rules**. |
+| Drive a page through several steps (click, fill, navigate) | `cf_browse_session_start`, then `cf_browse_session_navigate` / `_action` / `_snapshot`, then `cf_browse_session_close` | A browser session that keeps its state between calls. For "click load more, then scrape" or login flows. |
+| Take a screenshot of a page | `cf_browse_screenshot` | Returns an image. Pair it with your own vision. |
+| Get one kind of thing from a page | `cf_browse_links` / `cf_browse_forms` / `cf_browse_outline` / `cf_browse_find` | Cheaper than the full content when you only need links, forms, headings or a text match. |
+| Convert a document to markdown | `convert_document` | URL or file path. PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx, .xls), HTML, CSV, EPUB. **For structured markdown from a PDF, use this.** No OCR: images and scanned pages give an error that says no text was found. |
+| Get plain text from a PDF | `pdf_extract_text` | Cleaner word spacing than `convert_document` on PDFs with columns. Use it for "just give me the readable text". |
+| Get metadata and captions for a video | `extract_video` | yt-dlp, works with YouTube and many other sites. Returns title, uploader, duration, description and the English auto-captions when they exist. **Try this first** before transcribing: many videos have free captions. |
+| Get the audio or video **file** itself | `download_media` | Takes the best stream as is, with no re-encoding, and returns it as base64 (`content_b64`): decode and save it. `kind="audio"` or `"video"`. Files over `max_mb` (default 25) are refused. Use it when you need the media, not its text. |
+| Transcribe audio or video that has no captions | `transcribe_audio` | Local Whisper, on the toolbox's GPU if it has one, otherwise on its CPU. See **Model selection**: bigger is not always better. |
+| Turn text into speech | `synthesize_speech` | CPU only, slower than real time. Synthesize the whole script in **one** call. See **Text to speech** below. |
+| See which tools work right now | `toolbox_status` | Each tool's latest scheduled check: up, down (a known outage) or not checked yet. |
+| Check the toolbox is reachable | `ping` | Returns `"pong"`. |
 
 ---
 
 ## Selection rules
 
-### `fetch_page` vs `cf_browse`
+### `fetch_page` or `cf_browse`
 
-Try `fetch_page` first — it's faster, lighter, and handles ~90% of pages including most JS-heavy SPAs.
+Try `fetch_page` first. It is faster and lighter, and it handles most pages,
+including most JavaScript-heavy ones.
 
-Fall back to `cf_browse` when you see any of:
-- Response is suspiciously short (< 200 chars) or just a skeleton
-- Title or content contains "Just a moment", "Checking your browser", "Please verify", "Access denied", "Bot detected"
-- Site is known to use Cloudflare Turnstile, DataDome, PerimeterX, or Akamai Bot Manager
-- Crawl4AI returns an error mentioning challenge or 403
+Switch to `cf_browse` when you see any of:
 
-When you call `cf_browse`, set `humanize: true` for hostile targets — it enables realistic cursor movement and human-like timing that defeats most behavioral fingerprinting.
+- The answer is suspiciously short (under 200 characters) or only a page skeleton.
+- The title or text says "Just a moment", "Checking your browser", "Please verify",
+  "Access denied" or "Bot detected".
+- The site is known to use Cloudflare Turnstile, DataDome, PerimeterX or Akamai Bot
+  Manager.
+- Crawl4AI returns an error that mentions a challenge or a 403.
 
-### `cf_browse` vs `cf_browse_session_*`
+For hostile sites, call `cf_browse` with `humanize: true`. It adds realistic mouse
+movement and human-like timing.
 
-Single page read → `cf_browse` (browser launched and closed per call).
+### `cf_browse` or `cf_browse_session_*`
 
-Multi-step interaction → start a session, do N actions, close it. Session keeps cookies, auth state, and viewport between calls.
+One page to read: `cf_browse`. It starts a browser for the call and closes it after.
 
-### `convert_document` vs `pdf_extract_text`
+Several steps: start a session, do the steps, close it. The session keeps cookies,
+login state and the viewport between calls.
 
-Both can read a PDF. Different tradeoffs:
-- `convert_document` (Markitdown) — preserves structure (tables become markdown tables, headings preserved). **Quirk:** column-heavy PDFs sometimes lose spaces between words (e.g. "AttentionIsAllYouNeed").
-- `pdf_extract_text` (Stirling-PDF) — clean word spacing, no structure preserved. Plain text only.
+### `convert_document` or `pdf_extract_text`
 
-Pick by what you need: structure → `convert_document`. Readable text → `pdf_extract_text`.
+Both read PDFs, with different strengths:
+
+- `convert_document` (MarkItDown) keeps structure: tables become markdown tables and
+  headings stay headings. **Quirk:** PDFs with many columns sometimes lose the spaces
+  between words ("AttentionIsAllYouNeed").
+- `pdf_extract_text` (Stirling-PDF) keeps clean word spacing and no structure. Plain
+  text only.
+
+Pick by what you need: structure, `convert_document`; readable text, `pdf_extract_text`.
 
 ### `transcribe_audio` model selection
 
-Models are downloaded lazily on first use (cached after). Pick based on content shape, not "always biggest":
+Models download the first time they are used, then stay cached. Pick by the content,
+not "always the biggest":
 
-| Content type | Model | Why |
+| Content | Model | Why |
 |---|---|---|
-| Quick exploration, casual speech, drafts | `base.en` (default) | ~80× realtime. Fine for "what's the gist" |
-| Production captions, technical talks, multiple speakers | `large-v3` | Best accuracy on real speech |
-| Mid-quality fast | `small.en` | Sweet spot for general English content |
-| Music lyrics specifically | `medium.en` | Empirically beats `large-v3-turbo` on lyrics — the distillation regresses on hard musical input |
-| Non-English speech | drop the `.en` (use `tiny`/`base`/`small`/`medium`/`large-v3`) | Multilingual variants required for auto-detect or non-English |
+| A quick look, casual speech, drafts | `base.en` (default) | Fast. Fine for "what is this about". |
+| Captions people will read, technical talks, several speakers | `large-v3` | The most accurate on real speech. |
+| Good quality, still quick | `small.en` | The sweet spot for general English. |
+| Song lyrics | `medium.en` | In practice it beats `large-v3-turbo` on lyrics. |
+| Not English | a model without `.en` (`tiny`, `base`, `small`, `medium`, `large-v3`) | Needed to detect and transcribe other languages. |
 
-If you don't know what's in it: start with `base.en` to see the language and shape. Re-transcribe with the right model if you need precision.
+If you do not know what is in the audio, start with `base.en` to see the language and
+the shape, then transcribe again with the right model if you need precision.
 
-### `synthesize_speech` — how to not waste ten minutes
-
-Three rules, in order of how much time they save you:
-
-1. **One call for the whole script.** Per-call overhead dominates. A 3.5 s line measured 13x real
-   time; a 40 s passage measured 6.9x. Splitting a narration into lines can cost several times
-   more wall clock for identical audio. If you need per-line files, synthesise once and split the
-   returned WAV locally.
-2. **Always pass `reference_text` when you pass `voice_reference`.** Without it the model runs
-   Whisper on the reference first, which on CPU costs more than the synthesis you actually wanted.
-3. **`steps=16` when the words matter more than the delivery** (drafts, alt takes, checking
-   pronunciation). Roughly double the speed. Use the default 32 for anything a human will hear.
-
-It is slower than real time — budget ~5x the audio length. Tell the user that before you start a
-long job rather than after. For anything interactive or streaming, this is the wrong tool.
-
-Voice cloning wants a 3-10 second reference in the same language as the text. Longer references do
-not help and can hurt. A reference in a different language works but carries its accent across.
+Speed depends on the toolbox's hardware. On an AMD Radeon RX 5700 XT, `base.en` runs
+about 80 times faster than real time and `large-v3` about 8 to 12 times. On a CPU,
+`base.en` runs about 10 times faster than real time, `small.en` about 4 times and
+`large-v3-turbo` about 1.5 times; `large-v3` is slower still. If the toolbox runs on
+a CPU (ask the user, or notice slow transcriptions), prefer `base.en` or `small.en`
+unless the user needs the best accuracy.
 
 ### `extract_video` before `transcribe_audio`
 
-Always try `extract_video(url, want_transcript=True)` first. Many YouTube videos have free auto-captions — you get the transcript with zero GPU cost. Only fall back to `transcribe_audio` when `extract_video` returns `transcript: None`.
+Always try `extract_video(url, want_transcript=True)` first. Many YouTube videos have
+free auto-captions, so you get the transcript without any transcription work. Only
+fall back to `transcribe_audio` when `extract_video` returns `transcript: None`.
+
+### Text to speech
+
+Three rules, in order of how much time they save:
+
+1. **One call for the whole script.** Each call has a fixed cost, so short calls are
+   slow per second of audio. Splitting a narration into lines can take several times
+   longer for the same audio. If you need one file per line, synthesize once and cut
+   the returned WAV yourself.
+2. **Always pass `reference_text` with `voice_reference`.** Without it the model first
+   transcribes the reference clip, which on a CPU costs more than the speech you
+   wanted.
+3. **`steps=16` when the words matter more than the delivery** (drafts, checking
+   pronunciation). It is roughly twice as fast. Keep the default 32 for anything a
+   person will listen to.
+
+It is slower than real time: budget 4 to 10 times the length of the audio at the
+default quality, depending on the toolbox's CPU, and about half that with
+`steps=16`. Tell the user before you start a long job, not after. For anything interactive or streaming, it is the wrong tool.
+
+To clone a voice, use a 3 to 10 second clip in the same language as the text. Longer
+clips do not help and can hurt. A clip in another language works, but its accent
+carries over.
 
 ---
 
 ## Workflow recipes
 
-### Research a topic (general web)
+### Research a topic on the web
 
 ```
 1. search_web(query, max_results=8)
-2. For top 3-5 results: fetch_page(url) (parallel if your runtime supports it)
-3. Synthesize across the fetched pages
-4. If a key source got blocked, retry that one with cf_browse(humanize=true)
+2. fetch_page(url) for the top 3 to 5 results (in parallel if your runtime can)
+3. Combine what the pages say
+4. If a key source was blocked, retry that one with cf_browse(humanize=true)
 ```
 
-### Dissect a YouTube video for content
+### Take apart a YouTube video
 
 ```
 1. extract_video(url, want_transcript=True)
-2. If transcript is present: use it. Done.
+2. If there is a transcript: use it. Done.
 3. If transcript is None or empty:
-     transcribe_audio(url, model="large-v3")  # production-grade for spoken
-   For music/lyrics:
+     transcribe_audio(url, model="large-v3")   # for speech people will read
+   For music and lyrics:
      transcribe_audio(url, model="medium.en")
 ```
 
-### Ingest a PDF the user shared
+### Read a PDF the user shared
 
 ```
-For structured data (tables, headings, references):
+For structure (tables, headings, references):
   convert_document(source)
 
 For "just read it to me" plain text:
   pdf_extract_text(source)
 ```
 
-### Scrape data from a bot-protected site
+### Get data from a bot-protected site
 
 ```
-1. fetch_page(url) — try the cheap path first
-2. If empty/blocked: cf_browse(url, humanize=true, captchaPolicy="detect")
-3. If challenge detected, escalate to cf_browse with captchaPolicy="attempt"
-   (returns challenge metadata + screenshot for analysis)
-4. For multi-step flow: cf_browse_session_start → cf_browse_session_navigate/action/snapshot
+1. fetch_page(url): try the cheap path first
+2. If empty or blocked: cf_browse(url, humanize=true, captchaPolicy="detect")
+3. If a challenge is detected: cf_browse with captchaPolicy="attempt"
+   (returns details about the challenge and a screenshot to look at)
+4. For a flow with several steps: cf_browse_session_start, then
+   cf_browse_session_navigate / _action / _snapshot
 ```
 
-### Capture and reason about a page visually
+### Look at a page
 
 ```
 1. cf_browse_screenshot(url, humanize=true, fullPage=true)
-2. Use your own vision capability on the returned image (or pass to a vision model if you don't have one)
-3. Combine with cf_browse text content for cross-validation
+2. Use your own vision on the image (or pass it to a vision model)
+3. Check what you see against the text from cf_browse
 ```
 
 ---
 
-## Gotchas worth knowing
+## Things to know
 
-- **First `cf_browse` call after a toolbox rebuild may fail** with "Version information not found at .../version.json". Camoufox is downloading its Firefox binary (~300 MB). Wait 60 seconds and retry — subsequent calls work.
-- **Some pages crash Camoufox** with `unhandledRejection: TypeError`. Known cases: `bot.sannysoft.com`, occasionally `nowsecure.nl`. This is a camoufox-mcp v2.0.7 upstream bug. The toolbox auto-recovers (FastMCP proxy respawns the subprocess), but the failing call doesn't return — retry on a different URL or fall back to `fetch_page` if relevant.
-- **`maxChars` minimum is 1000 on cf_browse**. The tool will validation-error if you pass less.
-- **Camoufox sessions auto-expire after 10 minutes.** If you're doing a long multi-step flow, refresh with `cf_browse_session_resume` before it times out.
-- **Whisper transcription of long audio is slow on `large-v3`.** ~8-12× realtime on the 5700 XT means a 30-min audio takes ~2.5-4 min. For quick previews use `small.en` first.
-- **`transcribe_audio` accepts URLs as `source`** — it'll yt-dlp the audio for you. You don't need to download first.
+- **When a tool fails, read the end of the error.** The toolbox adds a line saying
+  whether the tool is a known outage (retrying will not help; use the alternative it
+  names), failed its latest scheduled check (it may be breaking), or passed it (one
+  retry is reasonable). `toolbox_status` lists every tool's state. Do not loop on
+  retries.
+- **Some pages crash the stealth browser** with `unhandledRejection: TypeError`. Known
+  cases: `bot.sannysoft.com`, and sometimes `nowsecure.nl`. This is a bug in
+  camoufox-mcp 2.0.7. The toolbox notices within a minute and restarts itself, which
+  takes about 10 seconds, but the call that crashed it does not return. Try another
+  URL, or `fetch_page` if it fits.
+- **The browser handles one page at a time.** Up to 8 more browser calls wait in a
+  queue for up to 30 seconds each; beyond that a call fails with "Too many concurrent
+  browse requests" or "Timed out waiting for a browse slot". Only one multi-step
+  session can be open at a time.
+- **`maxChars` is at least 1000 on `cf_browse`.** Smaller values fail validation.
+- **Browser sessions close after 10 minutes without a call.** Every session call
+  resets that timer.
+- **The browser tools refuse private and local addresses**, such as `192.168.x.x` or
+  `localhost`. The other tools do not.
+- **`transcribe_audio` takes URLs as `source`.** It downloads the audio itself; you do
+  not need to download first.
+- **`convert_document` does not transcribe audio or read images.** It tells you so
+  with an error. Use `transcribe_audio` for audio and video.
 
 ---
 
-## When NOT to use the toolbox
+## When not to use the toolbox
 
-- Pages already trivially accessible to your built-in fetch (no JS, no auth, no bot detection) — your native fetch is fine.
-- Local files you have direct read access to — read them directly rather than round-tripping.
-- Image reasoning if you have native vision — describing/captioning is better with native vision than via any wrapper.
+- Pages your own fetch tool already reads fine (no JavaScript, no login, no bot
+  protection): your own tool is fine.
+- Local files you can read directly: read them yourself instead of sending them
+  through the toolbox.
+- Describing images when you have vision yourself: your own vision does better than
+  any wrapper.
 
 ---
 
-## Where this document should live (persistence)
+## Where to keep this document
 
-The setup steps above (Before you start) are one-shot. Once the toolbox is wired into your runtime, this document is what helps you USE it well across future sessions — selection rules, recipes, gotchas. Don't make the user re-paste it every time. Persist it into your runtime's appropriate slot:
+The setup steps above are for the first time. After that, this document helps you
+*use* the toolbox well in later sessions: selection rules, recipes, things to know.
+Keep it where your runtime loads it, so the user does not have to paste it again:
 
-**Claude Code (skill):** save the body of this document at `~/.claude/skills/toolbox/SKILL.md` with this frontmatter:
+**Claude Code (skill):** save this document as `~/.claude/skills/toolbox/SKILL.md`,
+with this frontmatter at the top:
 
 ```yaml
 ---
-description: Using the homelab toolbox MCP — tool selection rules, workflow recipes, gotchas. Use when calling any mcp__toolbox__* tool or when planning research/scraping/transcription/PDF workflows.
+name: toolbox
+description: Using the Agentic Toolbox MCP server. Which tool to pick, workflow recipes, things to know. Use when calling any mcp__toolbox__* tool or planning research, scraping, transcription, PDF or speech work.
 ---
 ```
 
-**Hermes / agentic harness:** add this file to the agent's working-context load list (config option varies by harness).
+**Other agent harnesses:** add this file to the agent's context files. The setting
+depends on the harness.
 
-**Custom local-model agent:** include this content in the system prompt or as a tool-selection guide loaded before the first user turn.
+**Your own local-model agent:** put this content in the system prompt, or load it as
+a tool guide before the first user turn.
 
-**No persistence slot available:** paste the **Capability map** and **Selection rules** sections into the system prompt. Those two are the smallest unit of useful guidance — everything else can be re-derived from them.
+**No place to keep it:** put the **Capability map** and **Selection rules** sections
+in the system prompt. They are the smallest useful part; the rest follows from them.
