@@ -7,9 +7,9 @@
 #   docker compose up -d --no-deps --force-recreate gateway     # back to no logs; deletes the log file
 #
 services:
-  gateway:      {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
-  crawl4ai:     {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
-  searxng:      {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
-  stirling-pdf: {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
-  whisper:      {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
-  tts:          {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
+  gateway:      {logging: {driver: local, options: {max-size: 5m, max-file: "1", compress: "false"}}}
+  crawl4ai:     {logging: {driver: local, options: {max-size: 5m, max-file: "1", compress: "false"}}}
+  searxng:      {logging: {driver: local, options: {max-size: 5m, max-file: "1", compress: "false"}}}
+  stirling-pdf: {logging: {driver: local, options: {max-size: 5m, max-file: "1", compress: "false"}}}
+  whisper:      {logging: {driver: local, options: {max-size: 5m, max-file: "1", compress: "false"}}}
+  tts:          {logging: {driver: local, options: {max-size: 5m, max-file: "1", compress: "false"}}}
