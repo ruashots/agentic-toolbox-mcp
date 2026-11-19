@@ -108,6 +108,10 @@ services:
     <<: *private
     tmpfs:
       - /tmp:size=4g   # browser profiles, downloads, converted files: RAM only, gone on restart
+      # The browser draws pages through Mesa, which caches the shaders it compiles
+      # for them on disk. Keep that cache in RAM too.
+      - /root/.cache/mesa_shader_cache:size=64m
+      - /root/.cache/mesa_shader_cache_db:size=64m
     networks: [toolbox]
     ports:
       - "8000:8000"   # MCP streamable-http endpoint
