@@ -67,6 +67,9 @@ services:
       - SYSTEM_ENABLEPOSTHOG=false
       - SYSTEM_ENABLESCARF=false
       - LOGGING_LEVEL_ROOT=OFF
+      # The image tells Java to write a heap dump (a copy of its memory, so of the PDFs
+      # it is working on) to /configs, the stirling-data volume, if it runs out of memory.
+      - JAVA_CUSTOM_OPTS=-XX:-HeapDumpOnOutOfMemoryError
 
   whisper:
     build: ./whisper
