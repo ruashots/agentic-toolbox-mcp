@@ -1,0 +1,17 @@
+# Optional: run transcription (whisper.cpp) on an AMD GPU through Vulkan.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.amd-gpu.yml up -d
+#
+# or set COMPOSE_FILE=docker-compose.yml:docker-compose.amd-gpu.yml in .env so a
+# plain `docker compose up -d` includes it.
+#
+# The container needs the host's GPU device nodes and the groups that own them.
+# Check the group ids on your host with:  stat -c '%g %n' /dev/dri/*
+# and set VIDEO_GID / RENDER_GID in .env if yours differ from the defaults.
+services:
+  whisper:
+    devices:
+      - /dev/dri:/dev/dri
+    group_add:
+      - "${VIDEO_GID:-44}"
+      - "${RENDER_GID:-993}"

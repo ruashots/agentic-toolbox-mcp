@@ -1,9 +1,9 @@
 # tb-tts: OmniVoice text-to-speech, CPU-only.
 #
-# Deliberately CPU: this stack's GPU is AMD, and OmniVoice is a PyTorch model with
-# no ROCm path (it ships CUDA / Apple MPS / Intel XPU backends). Rather than leave
-# TTS off the toolbox entirely, it runs on CPU — slower than real time, but fine
-# for batch narration, which is what agents actually ask for. See README for numbers.
+# OmniVoice is a PyTorch model with CUDA / Apple MPS / Intel XPU backends and no
+# AMD (ROCm) path. This image installs CPU-only PyTorch, so it runs on any machine:
+# slower than real time, but fine for narration and voiceover. See the README for
+# numbers.
 #
 # The dependency list is plain torch + transformers with no flash-attn and no vllm,
 # which is exactly why a CPU build is possible at all.

@@ -1,8 +1,8 @@
-"""tb-whisper: whisper.cpp + AMD Vulkan HTTP wrapper.
+"""tb-whisper: whisper.cpp HTTP wrapper.
 
-Lazy-downloads models on first use, caches in /models volume. The 5700 XT (or any
-Vulkan-capable AMD GPU) is auto-detected by whisper.cpp at runtime — no per-model
-config needed.
+Lazy-downloads models on first use, caches in /models volume. whisper.cpp is built
+with Vulkan: it uses a GPU passed into the container (AMD, through Mesa RADV) and
+the CPU when there is none. No per-model config needed.
 """
 
 import asyncio

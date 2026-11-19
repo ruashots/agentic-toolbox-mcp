@@ -1,4 +1,6 @@
-# whisper.cpp HTTP server with AMD Vulkan backend (RDNA1+ 5700 XT)
+# tb-whisper: whisper.cpp HTTP server. whisper.cpp is built with its Vulkan backend:
+# it uses a GPU when one is passed into the container (docker-compose.amd-gpu.yml)
+# and the CPU when there is none.
 # Multi-stage: builder compiles whisper.cpp with Vulkan, runtime ships drivers + slim python wrapper.
 
 # Frozen: base by digest, whisper.cpp at an exact commit, Python deps at exact versions.

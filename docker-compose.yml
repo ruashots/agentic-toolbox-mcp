@@ -76,12 +76,8 @@ services:
     tmpfs:
       - /tmp:size=2g
     networks: [toolbox]
-    devices:
-      - /dev/dri/card1:/dev/dri/card1
-      - /dev/dri/renderD128:/dev/dri/renderD128
-    group_add:
-      - "44"     # video (host)
-      - "993"    # render (host)
+    # Runs on the CPU. To run it on an AMD GPU, add docker-compose.amd-gpu.yml
+    # (README: "Transcription on an AMD GPU").
     volumes:
       - whisper-models:/models
 
@@ -93,9 +89,9 @@ services:
     tmpfs:
       - /tmp:size=2g
     networks: [toolbox]
-    # CPU-only by design: OmniVoice has no ROCm path and this host's GPU is AMD.
-    # Give it real cores — synthesis is the one CPU-bound tool in the stack.
-    cpus: 8
+    # Runs on the CPU (the image ships CPU-only PyTorch). Synthesis is the one
+    # CPU-heavy tool in the stack; OMP_NUM_THREADS in tts/Dockerfile sets how many
+    # threads it uses.
     volumes:
       - tts-models:/models
 
@@ -115,7 +111,6 @@ services:
       - STIRLING_URL=http://stirling-pdf:8080
       - WHISPER_URL=http://whisper:8000
       - TTS_URL=http://tts:8000
-      - TOOLBOX_TOKEN=${TOOLBOX_TOKEN:-}
     volumes:
       - tb-health:/health:ro   # written by tb-watch; read to tell agents which tools are down
     # The Camoufox browser is baked into the image at build time (gateway/Dockerfile).
