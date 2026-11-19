@@ -50,14 +50,23 @@ mcp = FastMCP(
         "(with optional voice cloning). "
         "Prefer these tools over training-knowledge guesses when "
         "the user needs fresh, specific, or fully-rendered content. "
-        "Every tool is tested with a real job on a schedule. If a tool fails, "
-        "its error says whether it is a known outage, since when, and which "
-        "tool to use instead; call toolbox_status to see the state of every tool "
-        "before retrying."
+        "A watcher checks the tools with real jobs on a schedule (one browser "
+        "check covers all cf_* tools). If a tool fails, its error says whether it "
+        "is a known outage, since when, and which tool to use instead; call "
+        "toolbox_status to see the state of every tool before retrying."
     ),
 )
 
 md_converter = MarkItDown()
+
+
+def _backend_error(r: httpx.Response) -> str:
+    """The reason a backing service gave for an error, instead of a bare status line."""
+    try:
+        detail = r.json().get("detail")
+    except Exception:
+        detail = None
+    return f"{r.status_code}: {detail or r.text.strip()[:500] or r.reason_phrase}"
 
 
 # ---------------------------------------------------------------------------
@@ -77,7 +86,8 @@ _ALTERNATIVES = {
     "transcribe_audio": "For YouTube and similar sites, extract_video(want_transcript=True) returns the "
                         "site's own captions when they exist.",
     "synthesize_speech": "No other speech tool here.",
-    "extract_video": "For a transcript, use transcribe_audio on the same URL.",
+    "extract_video": "transcribe_audio downloads with the same tool (yt-dlp), so it may fail on the same "
+                     "sites; for the page's text, use fetch_page on the URL.",
     "download_media": "No other download tool here.",
     "ping": "The toolbox endpoint itself is failing; every tool is affected.",
 }
@@ -113,21 +123,22 @@ def _health_note(tool: str) -> str:
     stale = age is None or age > WATCHER_STALE_S
     t = status.get("tools", {}).get(check)
     if not t:
-        return f"[toolbox] {alt}".strip()
+        return f"[toolbox] {alt}" if alt else ""
+    subject = "This tool" if check == tool else "The browser that all cf_* tools share"
     if t.get("status") == "down":
         since = (t.get("since") or "?")[:16].replace("T", " ")
         msg = (f"[toolbox] KNOWN OUTAGE: {t.get('description', check)} has been failing since {since} UTC. "
                f"Retrying will not help until it is fixed. ")
     elif t.get("consecutive_failures"):
-        msg = ("[toolbox] This tool failed its most recent scheduled check and is being checked again, "
-               "so it may be breaking. ")
+        msg = (f"[toolbox] {subject} failed its most recent scheduled check and is being checked again, "
+               f"so it may be breaking. ")
     elif t.get("status") == "up":
         last_ok = (t.get("last_ok") or "never")[:16].replace("T", " ")
-        msg = (f"[toolbox] This tool passed its last scheduled real-job check (last success {last_ok} UTC), "
+        msg = (f"[toolbox] {subject} passed its last scheduled real-job check (last success {last_ok} UTC), "
                f"so this failure may be specific to your input or transient. One retry is reasonable. ")
     else:
-        msg = ("[toolbox] This tool has not been checked yet (the toolbox started recently), "
-               "so this failure may be specific to your input or transient. One retry is reasonable. ")
+        msg = (f"[toolbox] {subject} has not been checked yet (the toolbox started recently), "
+               f"so this failure may be specific to your input or transient. One retry is reasonable. ")
     if stale:
         msg += "(Health data is stale: the watcher has not reported recently.) "
     return (msg + alt).strip()
@@ -148,10 +159,12 @@ class _ExplainFailures(Middleware):
             # Proxied tools (the cf_* browser tools) report failure as an error result
             # instead of raising. Add the same note to those.
             if getattr(result, "is_error", False) and tool != "toolbox_status":
-                from mcp.types import TextContent
-                result.content = list(result.content or []) + [
-                    TextContent(type="text", text="\n\n" + _health_note(tool))
-                ]
+                note = _health_note(tool)
+                if note:
+                    from mcp.types import TextContent
+                    result.content = list(result.content or []) + [
+                        TextContent(type="text", text="\n\n" + note)
+                    ]
             return result
         except Exception as e:
             if tool == "toolbox_status":
@@ -160,7 +173,8 @@ class _ExplainFailures(Middleware):
             while cause is not None and not isinstance(cause, httpx.ConnectError):
                 cause = cause.__cause__ or cause.__context__
             prefix = "The service behind this tool is not reachable. " if cause is not None else ""
-            raise ToolError(f"{prefix}{e}\n\n{_health_note(tool)}") from e
+            note = _health_note(tool)
+            raise ToolError(f"{prefix}{e}" + (f"\n\n{note}" if note else "")) from e
 
 
 mcp.add_middleware(_ExplainFailures())
@@ -208,7 +222,7 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
 
     Args:
         query: search terms
-        max_results: how many results to return (default 10, max 30)
+        max_results: how many results to return, 1 to 30 (default 10)
     """
     r = httpx.get(
         f"{SEARXNG_URL}/search",
@@ -436,7 +450,8 @@ def transcribe_audio(
                slower, larger first download. Measured speed, in times faster than real time:
                on a CPU, base.en ~10x, small.en ~4x, large-v3-turbo ~1.5x; on an AMD RX 5700 XT,
                base.en ~80x and large-v3 ~8-12x. For the best accuracy use large-v3 or large-v3-turbo.
-        language: optional ISO 639-1 code (en, es, etc). Auto-detect if omitted.
+        language: optional ISO 639-1 code (en, es, etc). If omitted, Whisper assumes English.
+                  Pass "auto" to have it detect the language (use a model without .en).
 
     Returns:
         {text: full transcript, model, language, segments: [{start, end, text}, ...]}
@@ -460,9 +475,16 @@ def transcribe_audio(
                 capture_output=True, text=True, timeout=600,
             )
             if result.returncode != 0:
-                # Fall back to direct HTTP for non-yt-dlp URLs
-                r = httpx.get(source, timeout=120, follow_redirects=True)
-                r.raise_for_status()
+                # Fall back to direct HTTP for non-yt-dlp URLs. If that only finds a web page
+                # (or nothing), yt-dlp's own error is the useful one, so pass it on.
+                ytdlp_error = result.stderr.strip()[-500:]
+                try:
+                    r = httpx.get(source, timeout=120, follow_redirects=True)
+                    r.raise_for_status()
+                except httpx.HTTPError as exc:
+                    raise RuntimeError(f"could not get audio from {source}. yt-dlp said: {ytdlp_error}") from exc
+                if r.headers.get("content-type", "").startswith(("text/", "application/json")):
+                    raise RuntimeError(f"could not get audio from {source}. yt-dlp said: {ytdlp_error}")
                 audio_path.write_bytes(r.content)
         else:
             shutil.copy(source, audio_path)
@@ -480,7 +502,8 @@ def transcribe_audio(
                 files=files, data=data,
                 timeout=3600,
             )
-        r.raise_for_status()
+        if r.is_error:
+            raise RuntimeError(f"transcription failed: {_backend_error(r)}")
         return r.json()
 
 
@@ -494,13 +517,15 @@ def synthesize_speech(
 ) -> dict:
     """Turn text into speech (OmniVoice, 600+ languages, optional voice cloning).
 
-    Runs on CPU, so it is slower than real time: budget 4 to 10 times the audio length at
-    the default quality, depending on the CPU, and about half that at steps=16. That is
-    fine for narration, voiceover and audiobook-style batches; it is not suitable for
-    interactive or streaming use.
+    Runs on CPU, so it is slower than real time: budget about 3 to 5 times the audio
+    length at the default quality, depending on the CPU, and about half that at
+    steps=16. That is fine for narration, voiceover and audiobook-style batches; it is
+    not suitable for interactive or streaming use.
 
-    Cost is dominated by a fixed per-call overhead, so synthesise a whole script in one
-    call rather than line by line: it is several times faster for the same audio.
+    Each call adds only about a second, and long texts get slower per second of audio,
+    so split a long script into paragraphs or sentences: 39 s of speech took 186 s in
+    one call and 104 s in seven sentence calls. With a cloned voice, one call was a
+    little faster (103 s against 125 s).
 
     Args:
         text: what to say. Any of the model's 600+ languages; it is inferred from the text.
@@ -556,7 +581,8 @@ def synthesize_speech(
         files=files or None,
         timeout=3600,
     )
-    r.raise_for_status()
+    if r.is_error:
+        raise RuntimeError(f"speech synthesis failed: {_backend_error(r)}")
 
     return {
         "audio_b64": base64.b64encode(r.content).decode(),

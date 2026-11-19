@@ -115,3 +115,13 @@ def test_a_failing_call_carries_the_health_note(state, monkeypatch):
     message = str(err.value)
     assert "The service behind this tool is not reachable." in message
     assert "[toolbox] KNOWN OUTAGE" in message
+
+
+def test_a_browser_tool_hears_about_the_shared_browser_check(state):
+    state.record("cf_browse", ok=True, duration=1.0, error=None)
+    note = server._health_note("cf_browse_screenshot")
+    assert note.startswith("[toolbox] The browser that all cf_* tools share passed")
+
+
+def test_no_note_when_there_is_nothing_to_say(state):
+    assert server._health_note("no_such_tool") == ""
