@@ -59,6 +59,9 @@ md_converter = MarkItDown()
 def search_web(query: str, max_results: int = 10) -> list[dict]:
     """Search the web via SearXNG (federated meta-search, no rate limits).
 
+    An empty list always means the query genuinely had no hits. If the backend
+    answers with nothing because its engines refused, this raises instead.
+
     Args:
         query: search terms
         max_results: how many results to return (default 10, max 30)
@@ -69,7 +72,20 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
         timeout=20,
     )
     r.raise_for_status()
-    results = r.json().get("results", [])
+    payload = r.json()
+    results = payload.get("results", [])
+    # SearXNG answers 200 with an empty list in two very different cases: the
+    # query has no hits, or every engine it tried refused (CAPTCHA, rate limit,
+    # access denied). Returning [] for the second one reads as "no results" and
+    # sends the caller down the wrong path, so name the failures instead.
+    if not results:
+        dead = payload.get("unresponsive_engines") or []
+        if dead:
+            detail = "; ".join(f"{name}: {reason}" for name, reason in dead)
+            raise RuntimeError(
+                f"SearXNG returned nothing for {query!r} and these engines failed: "
+                f"{detail}. This is a backend fault, not an empty result set."
+            )
     return [
         {
             "title": x.get("title", ""),

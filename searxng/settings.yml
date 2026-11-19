@@ -32,3 +32,18 @@ outgoing:
   max_request_timeout: 20.0
   pool_connections: 100
   pool_maxsize: 20
+
+# Engines. Most default general engines refuse automated queries: when tested
+# on 2026-08-31, duckduckgo and startpage answered with a CAPTCHA, brave
+# rate-limited, qwant and wikidata denied access, and google and mojeek parsed
+# to nothing. The three below returned real results the same day. The other
+# defaults stay enabled on purpose: SearXNG pauses an engine that keeps failing
+# and tries it again later, so a paused engine costs nothing and comes back on
+# its own if the block lifts.
+engines:
+  - name: bing
+    disabled: false
+  - name: yandex
+    disabled: false
+  - name: yep
+    disabled: false
