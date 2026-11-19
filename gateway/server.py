@@ -1,11 +1,11 @@
-"""toolbox-gateway: FastMCP server aggregating homelab agentic tools.
+"""toolbox-gateway: one MCP endpoint for web, document, media and browser tools.
 
 Adding a new tool:
 1. If it needs a new container, add it to ../docker-compose.yml on the same `toolbox` network.
-2. If it's a pure Python dep, add it to requirements.txt.
-3. Add an @mcp.tool() function below.
-4. Rebuild + restart: `docker compose up -d --build gateway`
-   Connected MCP clients receive tools/list_changed automatically and refresh.
+2. If it needs a Python package, add it at an exact version to requirements.lock.
+3. Add an @mcp.tool function below, a real-job check for it to CHECKS in watch.py,
+   and what to use instead while it is down to _ALTERNATIVES.
+4. Rebuild + restart: `docker compose build gateway && docker compose up -d --no-deps gateway`
 
 Exposed at: http://<host>:8000/mcp (streamable HTTP transport)
 """
@@ -44,9 +44,10 @@ TTS_URL = os.environ.get("TTS_URL", "http://tts:8000")
 mcp = FastMCP(
     "toolbox",
     instructions=(
-        "Homelab toolbox: search the web, fetch JS-rendered pages, convert "
-        "documents to markdown, manipulate PDFs, extract video metadata and "
-        "transcripts, and synthesise speech (with optional voice cloning). "
+        "Toolbox: search the web, read JavaScript-rendered pages, drive a stealth "
+        "browser, convert documents and PDFs to text, get video metadata, "
+        "transcripts and media files, transcribe audio, and synthesise speech "
+        "(with optional voice cloning). "
         "Prefer these tools over training-knowledge guesses when "
         "the user needs fresh, specific, or fully-rendered content. "
         "Every tool is tested with a real job on a schedule. If a tool fails, "
@@ -117,10 +118,16 @@ def _health_note(tool: str) -> str:
         since = (t.get("since") or "?")[:16].replace("T", " ")
         msg = (f"[toolbox] KNOWN OUTAGE: {t.get('description', check)} has been failing since {since} UTC. "
                f"Retrying will not help until it is fixed. ")
-    else:
+    elif t.get("consecutive_failures"):
+        msg = ("[toolbox] This tool failed its most recent scheduled check and is being checked again, "
+               "so it may be breaking. ")
+    elif t.get("status") == "up":
         last_ok = (t.get("last_ok") or "never")[:16].replace("T", " ")
         msg = (f"[toolbox] This tool passed its last scheduled real-job check (last success {last_ok} UTC), "
                f"so this failure may be specific to your input or transient. One retry is reasonable. ")
+    else:
+        msg = ("[toolbox] This tool has not been checked yet (the toolbox started recently), "
+               "so this failure may be specific to your input or transient. One retry is reasonable. ")
     if stale:
         msg += "(Health data is stale: the watcher has not reported recently.) "
     return (msg + alt).strip()
@@ -194,7 +201,7 @@ def toolbox_status() -> dict:
 
 @mcp.tool
 def search_web(query: str, max_results: int = 10) -> list[dict]:
-    """Search the web via SearXNG (federated meta-search, no rate limits).
+    """Search the web via SearXNG (meta-search across several search engines).
 
     An empty list always means the query genuinely had no hits. If the backend
     answers with nothing because its engines refused, this raises instead.
@@ -238,12 +245,13 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
 def fetch_page(url: str, render_js: bool = True) -> str:
     """Fetch a web page and return clean markdown.
 
-    Uses Crawl4AI (Playwright-backed). JS rendering on by default — handles
-    SPAs, React/Next/Vue, Cloudflare-protected pages, login-gated dashboards.
+    Uses Crawl4AI, which loads the page in a real browser (Playwright), so pages
+    built with JavaScript (SPAs, React/Next/Vue) come back as their rendered text.
+    Sites with bot protection may return a challenge page instead: use cf_browse.
 
     Args:
         url: fully-qualified URL
-        render_js: if True (default), runs full browser. If False, plain HTTP fetch.
+        render_js: kept for compatibility and ignored: pages are always rendered in a browser.
     """
     r = httpx.post(
         f"{CRAWL4AI_URL}/md",
@@ -257,7 +265,11 @@ def fetch_page(url: str, render_js: bool = True) -> str:
 
 @mcp.tool
 def convert_document(source: str) -> str:
-    """Convert a document (PDF/DOCX/PPTX/XLSX/HTML/images-with-OCR) to markdown.
+    """Convert a document (PDF, Word .docx, PowerPoint .pptx, Excel .xlsx/.xls, HTML, CSV, EPUB) to markdown.
+
+    There is no OCR: text inside images and scanned pages is not read. It does not
+    transcribe audio or video either (use transcribe_audio for that). When nothing
+    readable is found, it raises an error instead of returning an empty string.
 
     Args:
         source: URL or local path. Local paths must be reachable inside the gateway container.
@@ -270,10 +282,18 @@ def convert_document(source: str) -> str:
             f.write(r.content)
             path = f.name
         try:
-            return md_converter.convert(path).text_content
+            text = md_converter.convert(path).text_content
         finally:
             os.unlink(path)
-    return md_converter.convert(source).text_content
+    else:
+        text = md_converter.convert(source).text_content
+    if not text.strip():
+        raise RuntimeError(
+            f"No text found in {source}. convert_document reads the text of documents. It has no "
+            "OCR, so images and scanned pages come back empty, and it does not transcribe audio "
+            "or video (use transcribe_audio for that)."
+        )
+    return text
 
 
 @mcp.tool
@@ -323,7 +343,7 @@ def download_media(url: str, kind: str = "audio", quality: str = "best", max_mb:
     Unlike extract_video (returns metadata/transcript) and transcribe_audio (returns text),
     this hands back the real file bytes so the caller can save/use it. Uses yt-dlp with the
     container's Node JS runtime, so it sees the full format list and grabs the genuine best
-    stream — NOT YouTube's low-quality `format 18` fallback you get without a JS runtime. The
+    stream, NOT YouTube's low-quality `format 18` fallback you get without a JS runtime. The
     stream is taken as-is (no re-encode), so audio stays pristine.
 
     Args:
@@ -332,7 +352,7 @@ def download_media(url: str, kind: str = "audio", quality: str = "best", max_mb:
         quality: "best" (default) or an explicit yt-dlp `-f` format selector to override.
         max_mb: refuse files larger than this (the bytes ride in the response). Raise for big video.
 
-    Returns: {"filename", "ext", "format", "size_bytes", "content_b64"} — decode content_b64 to the file.
+    Returns: {"filename", "ext", "format", "size_bytes", "content_b64"}. Decode content_b64 to get the file.
     """
     import base64
 
@@ -394,7 +414,7 @@ def pdf_extract_text(source: str) -> str:
 
 @mcp.tool
 def ping() -> str:
-    """Health check / hot-reload smoke test. Returns 'pong'. Use to verify the toolbox is reachable."""
+    """Health check. Returns 'pong'. Use to verify the toolbox is reachable."""
     return "pong"
 
 
@@ -404,7 +424,7 @@ def transcribe_audio(
     model: str = "base.en",
     language: str | None = None,
 ) -> dict:
-    """Transcribe audio/video to text via local Whisper (GPU-accelerated on AMD 5700 XT via Vulkan).
+    """Transcribe audio/video to text with local Whisper (whisper.cpp), on the toolbox's GPU if it has one, otherwise its CPU.
 
     Use for YouTube videos without auto-captions, podcasts, recorded meetings, or any audio file.
     For URLs, audio is downloaded via yt-dlp (1000+ sites supported) and normalized before transcription.
@@ -413,8 +433,9 @@ def transcribe_audio(
         source: URL (yt-dlp supports YouTube/Vimeo/podcast feeds/etc) or local path.
         model: whisper model. English-only: tiny.en/base.en/small.en/medium.en (default base.en).
                Multilingual: tiny/base/small/medium/large-v3/large-v3-turbo. Bigger = more accurate,
-               slower, larger first-download. base.en is ~80x realtime on the 5700 XT; large-v3 is
-               ~8-12x realtime. For social-media-grade precision, use large-v3 or large-v3-turbo.
+               slower, larger first download. Measured speed, in times faster than real time:
+               on a CPU, base.en ~10x, small.en ~4x, large-v3-turbo ~1.5x; on an AMD RX 5700 XT,
+               base.en ~80x and large-v3 ~8-12x. For the best accuracy use large-v3 or large-v3-turbo.
         language: optional ISO 639-1 code (en, es, etc). Auto-detect if omitted.
 
     Returns:
@@ -473,18 +494,19 @@ def synthesize_speech(
 ) -> dict:
     """Turn text into speech (OmniVoice, 600+ languages, optional voice cloning).
 
-    Runs on CPU, so it is slower than real time — budget roughly 5x the audio length
-    at the default quality, ~2x at steps=16. That is fine for narration, voiceover and
-    audiobook-style batches; it is not suitable for interactive or streaming use.
+    Runs on CPU, so it is slower than real time: budget 4 to 10 times the audio length at
+    the default quality, depending on the CPU, and about half that at steps=16. That is
+    fine for narration, voiceover and audiobook-style batches; it is not suitable for
+    interactive or streaming use.
 
     Cost is dominated by a fixed per-call overhead, so synthesise a whole script in one
-    call rather than line by line — it is several times faster for the same audio.
+    call rather than line by line: it is several times faster for the same audio.
 
     Args:
         text: what to say. Any of the model's 600+ languages; it is inferred from the text.
         voice_reference: optional 3-10 second sample of a voice to clone. Accepts an
             http(s) URL or base64 (raw or `data:` URL). Omit for the model's default voice.
-            Use a reference in the same language as `text` — a mismatch carries the
+            Use a reference in the same language as `text`: a mismatch carries the
             reference language's accent into the output.
         reference_text: transcript of `voice_reference`. Optional but recommended: without
             it the model runs Whisper to transcribe the clip, which on CPU costs more than
@@ -495,7 +517,7 @@ def synthesize_speech(
 
     Returns:
         {audio_b64, format: "wav", sample_rate, audio_seconds, generate_seconds,
-         realtime_factor, cloned} — decode `audio_b64` and write it to a .wav file.
+         realtime_factor, cloned}. Decode `audio_b64` and write it to a .wav file.
     """
     files: dict = {}
     tmp_ref = None
@@ -547,7 +569,7 @@ def synthesize_speech(
     }
 
 
-# Mount whit3rabbit/camoufox-mcp's 21 browser-automation tools into our surface.
+# Mount whit3rabbit/camoufox-mcp's 17 browser-automation tools into our surface.
 # Camoufox is a privacy-focused Firefox fork with C++-level anti-fingerprinting,
 # so this is what we use whenever Crawl4AI gets caught by bot-detection (Cloudflare,
 # DataDome, etc) or we need true multi-step browser automation.
@@ -577,7 +599,7 @@ async def _camoufox_health_watcher():
     Camoufox crashes on some pages (observed: nowsecure.nl triggers an
     unhandledRejection that kills the camoufox-mcp-server Node.js process).
     When that happens the FastMCP proxy's STDIO pipe is dead and subsequent
-    cf_* tool calls fail with "Connection closed" — no auto-recovery.
+    cf_* tool calls fail with "Connection closed", with no auto-recovery.
 
     Solution: poll cf_camoufox_status every 30s. On 2 consecutive failures,
     os._exit(1). Docker's `restart: unless-stopped` policy on the gateway
@@ -600,7 +622,7 @@ async def _camoufox_health_watcher():
             )
             if consecutive_failures >= 2:
                 print(
-                    "[health] camoufox unreachable — exiting for docker auto-restart",
+                    "[health] camoufox unreachable, exiting for docker auto-restart",
                     flush=True,
                 )
                 import os
@@ -612,9 +634,9 @@ async def _init_and_run():
     HTTP server accepts connections.
 
     Without this, the camoufox-mcp subprocess is only spawned on the first
-    tools/list call. Claude Code's MCP client may receive just the parent's
-    direct tools (the 7 native @mcp.tool ones) without the 17 cf_* tools that
-    come from the mounted proxy until a later list_changed notification.
+    tools/list call. Claude Code's MCP client may receive just the gateway's
+    own tools without the 17 cf_* tools that come from the mounted proxy until
+    a later list_changed notification.
     """
     from fastmcp import Client
     async with Client(mcp) as c:

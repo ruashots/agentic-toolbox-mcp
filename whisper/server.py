@@ -7,7 +7,6 @@ the CPU when there is none. No per-model config needed.
 
 import asyncio
 import json
-import os
 import subprocess
 import tempfile
 import urllib.request
@@ -70,7 +69,7 @@ async def transcribe(
         content = await file.read()
         in_path.write_bytes(content)
 
-        # whisper.cpp needs 16 kHz mono PCM — normalize via ffmpeg.
+        # whisper.cpp needs 16 kHz mono PCM, so normalize via ffmpeg.
         ff = subprocess.run(
             [
                 "ffmpeg", "-y", "-loglevel", "error",

@@ -7,7 +7,7 @@
 # See docs/operations.md.
 FROM ubuntu:24.04@sha256:73b999393d07f2bf65a40373778a44dc9a6d54ad7718d29247d8ff9413c4d6a8 AS builder
 
-# Ubuntu 24.04 ships glslc in main. Older Ubuntu/Debian don't — would need the LunarG SDK repo.
+# Ubuntu 24.04 ships glslc in main. Older Ubuntu/Debian don't: they would need the LunarG SDK repo.
 # whisper.cpp's Vulkan backend needs glslc to compile its SPIR-V compute shaders at build time.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         git cmake build-essential libvulkan-dev glslc \

@@ -1,12 +1,12 @@
 """tb-tts: OmniVoice text-to-speech HTTP wrapper (CPU).
 
-The model loads once on first request and stays resident — a cold load pulls ~3 GB
+The model loads once on first request and stays resident: a cold load pulls ~3 GB
 of weights from HuggingFace into /models, a warm load is ~1.5 s. Synthesis is
 serialised behind a lock: the model is not re-entrant and concurrent requests on a
 CPU box would only fight each other for the same cores.
 
 Voice cloning is per request. Send a 3-10 s reference clip and the reply speaks in
-that voice. Supplying the reference's transcript is optional but worth doing — the
+that voice. Supplying the reference's transcript is optional but worth doing: the
 model otherwise runs Whisper to transcribe it, which on CPU costs more than the
 synthesis itself.
 """
