@@ -117,6 +117,10 @@ services:
       - STIRLING_URL=http://stirling-pdf:8080
       - WHISPER_URL=http://whisper:8000
       - TTS_URL=http://tts:8000
+      # No calls home: FastMCP checks PyPI for a newer version when it starts, and
+      # onnxruntime (used by MarkItDown) keeps and may send Microsoft usage telemetry.
+      - FASTMCP_CHECK_FOR_UPDATES=off
+      - ORT_DISABLE_TELEMETRY=1
     volumes:
       - tb-health:/health:ro   # written by tb-watch; read to tell agents which tools are down
     # The Camoufox browser is baked into the image at build time (gateway/Dockerfile).
