@@ -1,9 +1,18 @@
-FROM python:3.12-slim
+# tb-gateway: FastMCP gateway + the Camoufox browser tools.
+#
+# EVERYTHING HERE IS FROZEN. A rebuild must produce the same working gateway as
+# the last one, months later, with nobody having changed anything. Nothing is
+# allowed to fetch "the newest" version at build time or at run time:
+#   - base image pinned by digest
+#   - Node pinned to an exact NodeSource package version
+#   - Python deps installed from requirements.lock (exact versions, all transitive)
+#   - the browser tool server installed from camoufox-mcp/pnpm-lock.yaml
+#   - the Camoufox browser itself: one exact release, checked by sha256
+# Updating any of these is a deliberate act: see docs/operations.md.
+FROM python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed06a1f5973e89e19dfb86704
 
-# yt-dlp → ffmpeg. https → ca-certificates. NodeSource → curl + gnupg.
-# Camoufox runs a real Firefox binary even in headless mode — needs GUI libs + Xvfb.
-# camoufox-mcp pulls native deps (impit, better-sqlite3) that need build-essential + python3
-# to compile via node-gyp when prebuilt binaries aren't available.
+# yt-dlp -> ffmpeg. Camoufox is a real Firefox build -> GUI libs + Xvfb.
+# The browser tool server's native deps (impit, better-sqlite3) -> build-essential + python3.
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         ffmpeg \
@@ -15,37 +24,48 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         libxkbcommon0 libxshmfence1 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
         xvfb \
     && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get install -y --no-install-recommends nodejs=22.23.3-1nodesource1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.lock .
+RUN pip install --no-cache-dir -r requirements.lock
 
-# camoufox-mcp-server pulls a native dep (`impit`) whose preinstall enforces pnpm via
-# `npx only-allow pnpm`. Plain `npm install -g` fails the check; use pnpm.
-# pnpm refuses to install if its global bin dir isn't in PATH — point it at /usr/local/bin
-# (which is) instead of pnpm's default $PNPM_HOME/bin.
-# Note: Camoufox's Firefox binary (~300MB) is downloaded on FIRST tool call, not at build time.
-# Pin pnpm 9 — pnpm 10 blocks lifecycle scripts by default which breaks the
-# better-sqlite3 native build (prebuild downloads + node-gyp fallbacks rely on
-# postinstall scripts). pnpm 9 runs them and the global install picks up the
-# native .node binary cleanly.
-# Pin camoufox-mcp-server to a known-working 2.x to avoid surprise upstream churn.
-# Pin playwright-core too: camoufox-js@0.10.2 declares its peer as "playwright-core": "*",
-# so a rebuild floats it to the newest release. Camoufox is a matched pair — the binary
-# (currently Firefox 135 / camoufox v135.0.1) only speaks the Juggler protocol of the
-# Playwright that bundles that same Firefox (1.51, FF135). A floated-in 1.61 sends an
-# `isMobile` field in Browser.setDefaultViewport that FF135's Juggler rejects ("not
-# described in this scheme"), breaking ALL cf_browse_* tools. auto-install-peers=false
-# forces the peer to resolve to the 1.51.1 we install explicitly instead of latest.
-RUN npm install -g pnpm@9 && \
-    pnpm config set global-bin-dir /usr/local/bin && \
-    pnpm config set auto-install-peers false && \
-    pnpm add -g playwright-core@1.51.1 camoufox-mcp-server@2.0.7
+# Browser tool server (camoufox-mcp-server 2.0.7 + camoufox-js 0.10.2 + playwright-core 1.51.1),
+# installed from the lockfile so no transitive dependency can float.
+# pnpm 9, not 10: pnpm 10 skips install scripts, which breaks better-sqlite3's native build.
+# .npmrc keeps auto-install-peers=false, matching the lockfile.
+RUN npm install -g pnpm@9.15.9
+WORKDIR /opt/camoufox-mcp
+COPY camoufox-mcp/package.json camoufox-mcp/pnpm-lock.yaml camoufox-mcp/.npmrc ./
+RUN pnpm install --frozen-lockfile --prod
+COPY camoufox-mcp/patch-camoufox-js.sh camoufox-mcp/install-browser.sh camoufox-mcp/selftest.mjs ./
+RUN ./patch-camoufox-js.sh
 
-COPY server.py .
+# The Camoufox browser, frozen at one exact release of github.com/daijro/camoufox.
+# install-browser.sh takes the release zip from gateway/vendor/ if it is there (offline
+# builds), otherwise downloads it, and stops the build unless its sha256 matches.
+# It also installs uBlock Origin (pinned the same way) and the GeoIP database, which
+# camoufox-js would otherwise download when the browser first starts.
+# (Do not set PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: in camoufox-js 0.10.2 it also stops
+# the installed uBlock Origin from being loaded.)
+ARG CAMOUFOX_VERSION=156.0.1
+ARG CAMOUFOX_RELEASE=beta.33
+ARG CAMOUFOX_SHA256=730d731153b2a16cac238a0b4a7f849c04d1fd6181c09ec6af29695af0407af8
+ARG UBO_URL=https://addons.mozilla.org/firefox/downloads/file/5034826/ublock_origin-1.75.0.xpi
+ARG UBO_SHA256=5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287
+RUN --mount=type=bind,source=vendor,target=/vendor ./install-browser.sh
+
+# Prove driver + protocol library + browser work together before this image can replace
+# the running one. Runs from inside the server package so it resolves the same camoufox-js.
+RUN d=$(readlink -f node_modules/camoufox-mcp-server) \
+    && cp selftest.mjs "$d/selftest.mjs" \
+    && node "$d/selftest.mjs" \
+    && rm "$d/selftest.mjs"
+
+WORKDIR /app
+COPY server.py ./
 
 EXPOSE 8000
 

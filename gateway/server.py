@@ -414,17 +414,18 @@ def synthesize_speech(
 # Camoufox is a privacy-focused Firefox fork with C++-level anti-fingerprinting,
 # so this is what we use whenever Crawl4AI gets caught by bot-detection (Cloudflare,
 # DataDome, etc) or we need true multi-step browser automation.
-# Tools surface as `mcp__toolbox__cf_<name>`. First call downloads ~300MB Firefox binary.
+# Tools surface as `mcp__toolbox__cf_<name>`. The browser is frozen into the image at
+# build time (see Dockerfile); nothing is downloaded at run time.
 mcp.mount(
     create_proxy({
         "mcpServers": {
             "default": {
                 # Use the pnpm-installed binary directly. Using `npx -y` here can fail
-                # after LXC restart with ERR_MODULE_NOT_FOUND because npx's cache is
+                # after a restart with ERR_MODULE_NOT_FOUND because npx's cache is
                 # incomplete (transitive deps like language-subtag-registry's JSON files
-                # don't always round-trip cleanly). The pnpm global install at build time
+                # don't always round-trip cleanly). The lockfile install at build time
                 # baked the full dependency tree into the image, so the binary is reliable.
-                "command": "camoufox-mcp-server",
+                "command": "/opt/camoufox-mcp/node_modules/.bin/camoufox-mcp-server",
                 "args": [],
             }
         }

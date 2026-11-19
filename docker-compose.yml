@@ -2,7 +2,7 @@ name: toolbox
 
 services:
   searxng:
-    image: searxng/searxng:latest
+    image: searxng/searxng@sha256:1a9d21346437a41ddfc2286968026dddece1d4d0721625cffa2c3b00bb2f9cf3  # frozen 2026-11-19
     container_name: tb-searxng
     restart: unless-stopped
     networks: [toolbox]
@@ -14,7 +14,7 @@ services:
       - UWSGI_THREADS=4
 
   crawl4ai:
-    image: unclecode/crawl4ai:latest
+    image: unclecode/crawl4ai@sha256:a45fd08f8f15f67026c1bff0a151f0479244caf6751a0c6943b3870efafcd025  # frozen 2026-11-19
     container_name: tb-crawl4ai
     restart: unless-stopped
     networks: [toolbox]
@@ -77,12 +77,8 @@ services:
       - WHISPER_URL=http://whisper:8000
       - TTS_URL=http://tts:8000
       - TOOLBOX_TOKEN=${TOOLBOX_TOKEN:-}
-    # No volume mount for /root/.cache — camoufox-mcp's startup rmdir's its own cache
-    # subdir, which EBUSY's on Docker volume mount points. Mounting the parent
-    # /root/.cache works for the rmdir but displaces fresh fetch contents on volume
-    # swap. Cleanest: let the Firefox binary live in the container's writable layer.
-    # Container restart / LXC restart preserve it; only `docker compose up --build`
-    # wipes it (and that triggers a one-time ~300 MB re-fetch on first cf_browse).
+    # The Camoufox browser is baked into the image at build time (gateway/Dockerfile).
+    # No volume for /root/.cache, and nothing is downloaded at run time.
     depends_on:
       - searxng
       - crawl4ai
