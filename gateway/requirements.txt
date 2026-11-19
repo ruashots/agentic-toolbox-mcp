@@ -2,5 +2,8 @@
 fastmcp==3.4.4
 mcp==1.28.1
 httpx>=0.27
+# markitdown[all] also pulls in SpeechRecognition, which makes markitdown send audio
+# files to Google's speech service. It is left out of requirements.lock on purpose:
+# remove it again whenever the lock is regenerated with pip freeze.
 markitdown[all]>=0.0.1a3
 yt-dlp>=2024.0

@@ -92,7 +92,6 @@ rpds-py==2026.6.3
 SecretStorage==3.5.0
 six==1.17.0
 soupsieve==2.10
-SpeechRecognition==3.17.0
 sse-starlette==3.5.0
 starlette==1.7.0
 typing-inspection==0.4.4
