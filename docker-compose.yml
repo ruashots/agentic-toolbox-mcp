@@ -1,10 +1,24 @@
 name: toolbox
 
+# PRIVACY RULE: the toolbox keeps no record of what agents asked for or got back.
+#  - container logs are off (driver "none"); to debug, use docker-compose.debug-logs.yml
+#    for as short a time as possible (see docs/operations.md, "Debugging without logs")
+#  - no core dumps (they are copies of process memory)
+#  - scratch space (/tmp and other per-request dirs) is RAM-only tmpfs, never disk
+x-private: &private
+  logging:
+    driver: none
+  ulimits:
+    core: 0
+
 services:
   searxng:
     image: searxng/searxng@sha256:1a9d21346437a41ddfc2286968026dddece1d4d0721625cffa2c3b00bb2f9cf3  # frozen 2026-11-19
     container_name: tb-searxng
     restart: unless-stopped
+    <<: *private
+    tmpfs:
+      - /tmp:size=256m
     networks: [toolbox]
     volumes:
       - ./searxng:/etc/searxng:rw
@@ -14,9 +28,15 @@ services:
       - UWSGI_THREADS=4
 
   crawl4ai:
-    image: unclecode/crawl4ai@sha256:a45fd08f8f15f67026c1bff0a151f0479244caf6751a0c6943b3870efafcd025  # frozen 2026-11-19
+    # Frozen upstream image plus three edits that stop it keeping pages and logs; see crawl4ai/Dockerfile.
+    build: ./crawl4ai
+    image: toolbox-crawl4ai
     container_name: tb-crawl4ai
     restart: unless-stopped
+    <<: *private
+    tmpfs:
+      - /tmp:size=1g
+      - /home/appuser/.crawl4ai:uid=999,gid=999,mode=0755,size=128m
     networks: [toolbox]
     shm_size: 1gb
     environment:
@@ -27,21 +47,34 @@ services:
     image: frooodle/s-pdf@sha256:b75b5ae2fcb75948f468718ed4c0bd499a8cafc9daf7f90f4c1e0e5a6acf9df8  # Stirling 2.11.0 pinned 2026-06-02 (was :latest; auto-broke auth+endpoint)
     container_name: tb-stirling
     restart: unless-stopped
+    <<: *private
+    tmpfs:
+      - /tmp:size=1g
+      - /home/stirlingpdfuser:uid=1000,gid=1000,mode=0755,size=256m   # LibreOffice keeps a recent-documents list here
+      - /logs:uid=1000,gid=1000,mode=0755,size=16m
     networks: [toolbox]
     ports:
       - "8085:8080"   # exposed for direct UI use; gateway also calls it internally
     volumes:
       - stirling-data:/configs
-      - stirling-logs:/logs
     environment:
       - DOCKER_ENABLE_SECURITY=false
       - SECURITY_ENABLELOGIN=false
       - LANGS=en_US
+      # No audit trail of conversions, no analytics, no log output.
+      - PREMIUM_ENTERPRISEFEATURES_AUDIT_ENABLED=false
+      - SYSTEM_ENABLEANALYTICS=false
+      - SYSTEM_ENABLEPOSTHOG=false
+      - SYSTEM_ENABLESCARF=false
+      - LOGGING_LEVEL_ROOT=OFF
 
   whisper:
     build: ./whisper
     container_name: tb-whisper
     restart: unless-stopped
+    <<: *private
+    tmpfs:
+      - /tmp:size=2g
     networks: [toolbox]
     devices:
       - /dev/dri/card1:/dev/dri/card1
@@ -56,6 +89,9 @@ services:
     build: ./tts
     container_name: tb-tts
     restart: unless-stopped
+    <<: *private
+    tmpfs:
+      - /tmp:size=2g
     networks: [toolbox]
     # CPU-only by design: OmniVoice has no ROCm path and this host's GPU is AMD.
     # Give it real cores — synthesis is the one CPU-bound tool in the stack.
@@ -67,6 +103,9 @@ services:
     build: ./gateway
     container_name: tb-gateway
     restart: unless-stopped
+    <<: *private
+    tmpfs:
+      - /tmp:size=4g   # browser profiles, downloads, converted files: RAM only, gone on restart
     networks: [toolbox]
     ports:
       - "8000:8000"   # MCP streamable-http endpoint
@@ -96,6 +135,17 @@ services:
     image: toolbox-watch
     container_name: tb-watch
     restart: unless-stopped
+    # The watcher's log holds only its own fixed test jobs (wikipedia.org, the files in
+    # gateway/fixtures), never agent requests, so it keeps a small log for diagnosis.
+    logging:
+      driver: local
+      options:
+        max-size: 1m
+        max-file: "2"
+    ulimits:
+      core: 0
+    tmpfs:
+      - /tmp:size=256m
     networks: [toolbox]
     command: ["python", "watch.py"]
     volumes:
@@ -111,7 +161,6 @@ networks:
 
 volumes:
   stirling-data:
-  stirling-logs:
   whisper-models:
   tts-models:
   tb-health:

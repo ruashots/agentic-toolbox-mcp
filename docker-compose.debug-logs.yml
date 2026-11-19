@@ -1,0 +1,15 @@
+# TEMPORARY container logs for debugging. These logs CAN contain what agents asked
+# for (URLs, queries, errors that quote inputs). Turn on for one service, reproduce,
+# read, then turn off AND remove the container so the log file is deleted:
+#
+#   docker compose -f docker-compose.yml -f docker-compose.debug-logs.yml up -d --no-deps gateway
+#   docker logs tb-gateway
+#   docker compose up -d --no-deps --force-recreate gateway     # back to no logs; deletes the log file
+#
+services:
+  gateway:      {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
+  crawl4ai:     {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
+  searxng:      {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
+  stirling-pdf: {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
+  whisper:      {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
+  tts:          {logging: {driver: local, options: {max-size: 5m, max-file: "1"}}}
