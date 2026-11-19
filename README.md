@@ -1,205 +1,270 @@
-# toolbox
+# Agentic Toolbox
 
-A single MCP gateway endpoint that aggregates web/doc/media/browser-automation tools for any agent on your LAN. Built so adding a capability once makes it available to every connected agent — no per-agent installs, no skill drift, no version churn across agents.
+A self-hosted MCP server that gives your AI agents 27 tools behind one URL: web
+search, page reading, a stealth browser, document and PDF conversion, video
+metadata and downloads, speech-to-text and text-to-speech. It installs with one
+Docker Compose command and needs no accounts or API keys.
 
-Lives on a Proxmox LXC. Exposes one URL. Any MCP-capable agent connects and gets the full toolset.
+<p align="center">
+  <img src="docs/media/demo.svg" alt="Terminal output of examples/demo.py: a web search, a Wikipedia page read as markdown, python.org loaded in the stealth browser, a YouTube video's metadata, and 10 of 10 health checks passing, each with its time in seconds." width="860">
+</p>
 
-## What's inside
+<sub>Real output of [`examples/demo.py`](examples/demo.py) against a fresh install. Run it yourself after installing.</sub>
 
-| Tool | Backed by | What it does |
+## Why use it
+
+- **One URL for every agent.** Point Claude Code, your own agents and anything else
+  that speaks MCP at the same endpoint. Add a tool once and every agent that connects
+  gets it. Nothing to install per agent.
+- **Your agent finds out when a tool is broken.** A watcher runs a real job through
+  every tool on a schedule. When a call fails, the error tells the agent whether that
+  tool is a known outage, since when, and which tool to use instead.
+- **It keeps no record of what agents ask.** Container logs are off, scratch files
+  live in RAM, and the caches and audit logs of the services underneath are switched
+  off.
+- **Rebuilds give you the same toolbox.** Base images, every Python and Node
+  package, and the browser build are pinned to exact versions and checked at build
+  time.
+- **Nothing to sign up for.** It runs on your machine. No accounts, no API keys, no
+  paid service in between.
+
+## What your agent gets
+
+| Your agent wants to | Tool | Runs on |
 |---|---|---|
-| `search_web` | SearXNG | Federated meta-search, 30+ engines, no rate limits |
-| `fetch_page` | Crawl4AI (Playwright) | JS-rendered page → clean markdown |
-| `convert_document` | Markitdown | PDF/DOCX/PPTX/XLSX/HTML/image-OCR → markdown |
-| `extract_video` | yt-dlp | Metadata + auto-transcript from YouTube/podcasts/1000+ sites |
-| `download_media` | yt-dlp + Node | Download the real audio/video **file** (base64). Genuine best stream — no low-quality `format 18` fallback |
-| `pdf_extract_text` | Stirling-PDF | Plain text from PDF |
-| `transcribe_audio` | whisper.cpp + Vulkan | GPU STT (AMD 5700 XT). All standard models tiny→large-v3-turbo |
-| `synthesize_speech` | OmniVoice (CPU) | TTS in 600+ languages, optional voice cloning from a 3-10 s sample |
-| `cf_*` (17 tools) | whit3rabbit/camoufox-mcp | Stealth Firefox automation. Use when normal browsers get bot-blocked |
-| `ping` | — | Health check / hot-reload smoke test |
+| Search the web | `search_web` | [SearXNG](https://github.com/searxng/searxng) |
+| Read a page, JavaScript included | `fetch_page` | [Crawl4AI](https://github.com/unclecode/crawl4ai) |
+| Get past bot protection, click, fill forms, take screenshots | `cf_browse` and 16 more `cf_*` tools | [Camoufox](https://github.com/daijro/camoufox), a stealth Firefox, through [camoufox-mcp](https://github.com/whit3rabbit/camoufox-mcp) |
+| Turn a PDF, Word, PowerPoint, Excel, HTML or EPUB file into markdown | `convert_document` | [MarkItDown](https://github.com/microsoft/markitdown) |
+| Get the plain text out of a PDF | `pdf_extract_text` | [Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF) |
+| Get a video's title, description and captions | `extract_video` | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
+| Download the audio or video file itself | `download_media` | yt-dlp |
+| Transcribe speech | `transcribe_audio` | [whisper.cpp](https://github.com/ggml-org/whisper.cpp), on the CPU or an AMD GPU |
+| Turn text into speech, or speak in a voice cloned from a short clip | `synthesize_speech` | [OmniVoice](https://github.com/k2-fsa/OmniVoice), on the CPU |
+| See which tools work right now | `toolbox_status`, `ping` | the built-in watcher |
 
-The three media tools split by what they hand back: `extract_video` → metadata/transcript,
-`transcribe_audio` → text, `download_media` → the actual file (base64). `download_media` uses the
-container's Node JS runtime so yt-dlp sees full formats (avoids YouTube's degraded `format 18`).
+`extract_video`, `transcribe_audio` and `download_media` work with YouTube and the
+other sites yt-dlp supports.
 
-Speech goes both directions: `transcribe_audio` for speech→text, `synthesize_speech` for text→speech.
-The asymmetry is deliberate and worth knowing before you plan around it — STT is GPU-accelerated and
-faster than real time, TTS runs on CPU and is slower than real time. See the TTS section below.
+## Install
 
-Browser tools split by job:
-- `fetch_page` → fast Crawl4AI fetch with JS rendering, the 90% case
-- `cf_browse` → Camoufox-backed when Crawl4AI gets caught (Cloudflare Turnstile, DataDome, fingerprint walls)
-- `cf_browse_session_*` → multi-step flows (click load-more, fill forms, navigate auth)
+**You need** an x86-64 machine with Docker and Docker Compose v2 (Linux, or Windows
+through WSL 2), about 50 GB of free disk and 8 GB of RAM. No GPU.
 
-## Architecture
-
-One FastMCP gateway, multiple backing services on the same Docker network:
-
-```
-agents ── HTTP/MCP ──▶ tb-gateway ──┬──▶ tb-searxng
-                                    ├──▶ tb-crawl4ai
-                                    ├──▶ tb-stirling
-                                    ├──▶ tb-whisper (AMD GPU passthrough)
-                                    ├──▶ tb-tts (CPU)
-                                    └──▶ camoufox-mcp (subprocess, mounted via FastMCP)
-```
-
-Three patterns that earn their keep:
-
-**FastMCP `mount(create_proxy(...))`** — third-party MCP servers (Camoufox-mcp) are spawned as STDIO subprocesses inside the gateway. Their tools surface through our single endpoint with a namespace prefix. We don't reimplement them; we expose them.
-
-**Eager init at startup** — the gateway calls `list_tools()` on itself in-process before binding the HTTP server. Forces the proxy subprocess to spawn and register its tools so the first external client connection already sees the full catalog. Without this, the proxy populates lazily and clients miss tools on their initial enumeration.
-
-**Health watcher** — background task polls a proxy tool every 30s. On two consecutive failures (camoufox subprocess crashed from an unhandledRejection), `os._exit(1)` triggers Docker's `restart: unless-stopped` to respawn the gateway. ~10s self-heal per crash.
-
-## Reproducing
-
-Prereqs:
-- A Proxmox host (or any Docker host)
-- An LXC / VM with at least 4 GB RAM, 8 GB+ if running Whisper
-- Docker + docker compose v2
-- For Whisper GPU: an AMD GPU passed through with `/dev/dri/card*` + `/dev/dri/renderD128` (or skip Whisper)
-
-Steps:
+The first build downloads about 5.5 GB. On a 32-thread machine with a fast
+connection the toolbox was up 5 minutes after the clone; smaller machines take
+longer, mostly for the downloads and the whisper.cpp compile.
 
 ```bash
-# Clone
-git clone <this-repo> toolbox
-cd toolbox
-
-# Start the stack (first build ~10-15 min — Whisper builds whisper.cpp with Vulkan,
-# Camoufox downloads a 300 MB patched Firefox on first cf_browse call)
+git clone https://github.com/Ruashots/agentic-toolbox-mcp.git
+cd agentic-toolbox-mcp
 docker compose up -d --build
-
-# Wait for gateway to log "Uvicorn running" — eager init takes ~10s
-docker compose logs -f gateway
 ```
 
-Wire it into your agent:
+Give it two minutes after that command returns, then see it work:
 
 ```bash
-# Claude Code (user scope, available across all projects)
-claude mcp add --transport http --scope user toolbox http://<host-ip>:8000/mcp
-
-# Other MCP clients: configure with HTTP transport pointing at http://<host-ip>:8000/mcp
+docker exec -i tb-gateway python - < examples/demo.py
 ```
 
-## Hard-won gotchas (read these or rediscover them yourself)
+The demo makes a few real calls and ends with the watcher's health checks, whose
+first round takes about two minutes. To follow those checks as they run:
+`docker logs -f tb-watch`.
 
-These cost us a lot of rebuilds. Documented so you don't repeat them.
+### Connect your agent
 
-1. **pnpm 10 silently breaks native modules.** `better-sqlite3` (camoufox-mcp transitive dep) needs `node-gyp` to build its `.node` binding. pnpm 10 blocks lifecycle scripts by default → no postinstall → no compiled binding → cf_browse fails at runtime with "Could not locate the bindings file." **Pin pnpm 9.** Already done in the Dockerfile; don't bump it without retesting.
+The MCP endpoint is `http://<this-machine>:8000/mcp`, over streamable HTTP. For
+Claude Code:
 
-2. **Pin `camoufox-mcp-server` to a known version.** `@latest` causes transitive-dep drift between rebuilds. We pin `2.0.7`.
+```bash
+claude mcp add --transport http --scope user toolbox http://<this-machine>:8000/mcp
+```
 
-3. **Don't use `npx` to spawn camoufox-mcp from the FastMCP proxy.** npx's package cache fragments across container restarts and you'll hit ERR_MODULE_NOT_FOUND. Use the binary that pnpm puts in `/usr/local/bin/camoufox-mcp-server`.
+Start a new Claude Code session and the tools appear as `mcp__toolbox__*`. Any other
+MCP client: add a streamable HTTP server with the same URL.
 
-4. **No volume mount on `/root/.cache/camoufox`.** Camoufox-mcp tries to `rmdir` its cache subdir at startup as a cleanup step. Docker volume mount points can't be rmdir'd → EBUSY → unhandledRejection → subprocess death. Let the Firefox binary live in the container writable layer instead; container restart + LXC reboot preserve it. Only `docker compose up --build` wipes it (and triggers a one-time 300 MB re-fetch).
+To help your agent pick the right tool, give it [AGENT_HANDOFF.md](AGENT_HANDOFF.md).
+It covers which tool to use when, ready-made workflows and known quirks, and it walks
+an agent through connecting itself.
 
-5. **Camoufox needs Xvfb.** "Virtual headless" mode uses a fake X display for fingerprint-resistance tricks. `apt install xvfb` is required even though no display is connected.
+### The first run
 
-6. **whisper.cpp + Vulkan needs the full SPIR-V chain.** `glslc` (only in Ubuntu 24.04+ main), `spirv-headers`, `glslang-dev`, `libshaderc-dev`. Use `ubuntu:24.04` as the builder base. Match runtime base for glibc (whisper-cli built on 24.04 needs `GLIBC_2.38` / `GLIBCXX_3.4.32`).
+- The first transcription downloads its Whisper model (148 MB for the default
+  `base.en`, up to 3 GB for `large-v3`). They are kept in a Docker volume.
+- The first speech request downloads the voice model, about 3 GB. Until that is
+  done, `toolbox_status` can show `synthesize_speech` as down.
+- Once running, the toolbox uses about 3.5 GB of RAM, plus about 2.5 GB while
+  `large-v3-turbo` transcribes (the biggest models take more).
 
-7. **Constrain `cmake --build -j` parallelism.** Whisper's Vulkan headers are template-heavy — each `cc1plus` peaks at ~3 GB. All-cores parallel will OOM in an 8 GB LXC. `-j4` keeps it under the cap. Even at `-j4` this compile can OOM if the other containers are running and eating RAM — so don't trigger a whisper rebuild unless you mean to. The sneaky way to trigger it accidentally is `docker compose up --build gateway`: because `gateway depends_on whisper`, that rebuilds whisper too. To redeploy only a gateway code change, use `docker compose build gateway && docker compose up -d --no-deps gateway` (see Operations).
+<details>
+<summary><b>Transcription on an AMD GPU</b></summary>
 
-8. **TTS is CPU-only because the GPU is AMD.** OmniVoice is a PyTorch model with CUDA / Apple MPS / Intel XPU backends and no ROCm path. Don't try to point it at the AMD card — the reason whisper works on that GPU is that whisper.cpp ships hand-written Vulkan compute shaders, which is a completely different approach. The upside is that OmniVoice's dependency list has no `flash-attn` and no `vllm`, which is what makes a plain CPU build possible at all; if a future TTS model pins either, it won't run here.
+whisper.cpp is built with Vulkan, so it can use an AMD GPU. Pass the GPU into the
+container with the override file:
 
-9. **First call to `cf_browse` after a `docker compose up --build` may fail** with "Version information not found at .../version.json" — Firefox download race. Retry once; subsequent calls work.
+```bash
+docker compose -f docker-compose.yml -f docker-compose.amd-gpu.yml up -d
+```
 
-## Text-to-speech
+To make that the default, copy `.env.example` to `.env` and uncomment the
+`COMPOSE_FILE` line. If your host's `video` and `render` groups have other ids than
+44 and 993 (check with `stat -c '%g %n' /dev/dri/*`), set `VIDEO_GID` and
+`RENDER_GID` there too.
 
-`synthesize_speech` wraps [OmniVoice](https://github.com/k2-fsa/OmniVoice) — Apache-2.0, 600+
-languages, zero-shot voice cloning from a short reference clip.
+whisper.cpp's Vulkan build has run in production on a Radeon RX 5700 XT. Without
+the override, transcription runs on the CPU. NVIDIA GPUs are not set up.
 
-**It runs on CPU, and that is a deliberate trade.** OmniVoice ships CUDA, Apple MPS and Intel XPU
-backends; there is no ROCm path, and this stack's GPU is AMD. The options were "no TTS in the
-toolbox" or "TTS that is slower than real time." The second is more useful, because what agents
-actually ask for is narration and voiceover — batch jobs where a few minutes of wall clock is
-irrelevant. What it is *not* suitable for is anything interactive or streaming.
+</details>
 
-Measured on an 8-core CPU allocation, at the default 32 diffusion steps:
+<details>
+<summary><b>If the browser download fails, or you build offline</b></summary>
 
-| Mode | Real-time factor | 60 s of speech takes |
+The gateway build downloads the Camoufox browser (1.3 GB) from its official
+release and stops unless the file's sha256 matches the pinned one. To build without
+that download, put the same zip in `gateway/vendor/` first; see
+[gateway/vendor/README.md](gateway/vendor/README.md).
+
+</details>
+
+## How your agent finds out a tool is broken
+
+The `tb-watch` container calls every tool through the same endpoint your agents
+use, with fixed test inputs, from every minute to every six hours depending on the
+tool. A tool that fails twice in a row is marked down, and one good check marks it
+up again.
+
+Every failing call then ends with a note for the agent. When search is down, an
+agent sees:
+
+```
+[toolbox] KNOWN OUTAGE: web search has been failing since 2026-11-19 10:00 UTC.
+Retrying will not help until it is fixed. No other search tool here. As a fallback,
+fetch_page a search results page (e.g. https://html.duckduckgo.com/html/?q=your+terms).
+```
+
+The `toolbox_status` tool shows every tool's state at once. The list of checks is in
+[docs/operations.md](docs/operations.md#health-checks).
+
+## Security: who can use it
+
+There is no login. **Anyone who can reach port 8000 can use every tool.** Run it on
+a network you trust, and do not expose it to the internet.
+
+What that means in practice:
+
+- The tools fetch any URL they are given, including addresses on your own network,
+  such as your router's page or other services. The `cf_*` browser tools refuse
+  private and local addresses; `fetch_page`, `convert_document`, `pdf_extract_text`,
+  `transcribe_audio`, `download_media` and `synthesize_speech` do not.
+- `convert_document`, `pdf_extract_text` and `transcribe_audio` also accept file
+  paths, and read them inside the gateway container.
+- Port 8085 serves Stirling-PDF's own web page, with its login turned off. The
+  toolbox does not need it: delete the two `ports` lines under `stirling-pdf` in
+  `docker-compose.yml` to close it.
+- To accept connections from this machine only, change `"8000:8000"` to
+  `"127.0.0.1:8000:8000"` in `docker-compose.yml`.
+
+## Privacy: what it keeps, and what leaves your machine
+
+The toolbox keeps no record of what agents ask for or get back, on disk or in logs:
+
+- Container logs are off for every service. The watcher keeps a small log of its own
+  test jobs, never of agent requests.
+- Downloads, uploads, converted files, audio, and the browser's profiles and caches
+  are kept in RAM and disappear when a container restarts. No core dumps or Java heap
+  dumps are written.
+- The browser starts fresh for every call. A multi-step browser session keeps its
+  cookies until it is closed, or after 10 minutes without a call.
+- Crawl4AI's page cache, log files and Redis snapshots, Stirling-PDF's audit trail
+  and analytics, and the access logs of the speech services are all off.
+- FastMCP's update check and onnxruntime's usage telemetry are off too.
+
+What leaves your machine:
+
+- What your agents ask for. Searches go to search engines through SearXNG, and
+  pages, videos and files are fetched from their sites.
+- The watcher's test jobs: a search for "wikipedia" and visits to wikipedia.org and
+  python.org every 10 minutes, and the details and audio of one 19-second YouTube
+  video every 6 hours.
+- Model downloads from Hugging Face, the first time transcription or speech is used.
+- A lookup of your public IP address (api.ipify.org, or a similar service if that
+  fails) each time the browser starts. Camoufox uses it to match the browser's time
+  zone and language to your IP.
+
+What websites and search engines record about the requests they receive is outside
+the toolbox's control. To debug a service you can turn its log on for a while; see
+[Debugging without logs](docs/operations.md#debugging-without-logs).
+
+## Your data and backups
+
+There is nothing you need to back up. The toolbox holds no data of yours, and every
+Docker volume contains files it downloads or rebuilds on its own:
+
+| Volume | Holds | Size |
 |---|---|---|
-| Default voice, `steps=16` | ~2.2x | ~2 min |
-| Default voice, `steps=32` | ~4.5x | ~4.5 min |
-| Cloned voice, `steps=32` | ~7x | ~7 min |
+| `toolbox_tts-models` | the OmniVoice voice model | about 3 GB |
+| `toolbox_whisper-models` | Whisper models you have used | 148 MB to a few GB |
+| `toolbox_stirling-data` | Stirling-PDF's settings and its user database (two built-in accounts, no record of files) | under 1 MB |
+| `toolbox_tb-health` | the watcher's latest results | a few KB |
 
-Two things that matter more than the raw numbers:
-
-**Batch the whole script in one call.** Per-call overhead dominates short requests — a 3.5 s line
-measured 13x real time while a 40 s passage measured 6.9x. Same model, same settings. Synthesising
-line by line wastes most of the compute.
-
-**Pass `reference_text` when cloning.** Without it the model transcribes the reference clip with
-Whisper first, which on CPU costs more than the synthesis. With it, cloning is a single pass.
-
-The model is ~3 GB and downloads on first use into the `tts-models` volume. A cold start (download
-included) is ~35 s; afterwards the model stays resident and warm loads are ~1.5 s. Requests are
-serialised — the model is not re-entrant, and parallel requests on a CPU box would only contend for
-the same cores.
-
-For voice cloning, use a 3-10 second reference in the *same language* as the text you want spoken.
-A cross-language reference works, but the output carries the reference language's accent.
-
-## Operations
+Backing up the two model volumes only saves the download next time. For the voice
+model:
 
 ```bash
-# Tail any service
-docker compose logs -f gateway      # toolbox gateway logs
-docker compose logs -f whisper      # Whisper inference logs
-docker compose logs -f crawl4ai     # browser pool
+# Back up
+docker run --rm -v toolbox_tts-models:/v:ro -v "$PWD":/backup alpine tar czf /backup/tts-models.tgz -C /v .
 
-# Restart one service (other tools stay up)
-docker compose restart gateway
-
-# Pull latest base images (Stirling/SearXNG/Crawl4AI)
-docker compose pull && docker compose up -d
-
-# Rebuild gateway after a code/dep change.
-# IMPORTANT: build then recreate with --no-deps. Do NOT use `up --build gateway`:
-# gateway `depends_on: whisper`, so `up --build` ALSO rebuilds the whisper image,
-# whose whisper.cpp+Vulkan compile OOM-kills cc1plus in an 8 GB LXC (see gotcha #7).
-# The gateway image only needs the new server.py copied — a ~3 s rebuild.
-docker compose build gateway          # builds gateway only, never touches deps
-docker compose up -d --no-deps gateway  # recreates only the gateway container
-
-# Verify all tools are live
-docker exec tb-gateway python -c "
-import asyncio
-from fastmcp import Client
-async def main():
-    async with Client('http://localhost:8000/mcp') as c:
-        print(len(await c.list_tools()), 'tools')
-asyncio.run(main())
-"
+# Restore, on a new install that has been started once (so the volume exists)
+docker compose stop tts
+docker run --rm -v toolbox_tts-models:/v -v "$PWD":/backup alpine tar xzf /backup/tts-models.tgz -C /v
+docker compose start tts
 ```
 
-## Adding a new tool
+For Whisper models, use `whisper-models` and `whisper` in place of `tts-models` and `tts`.
 
-The scalable pattern. When a capability gap repeats across agents:
+`docker compose down -v` removes the containers and every volume, which deletes the
+downloaded models too.
 
-1. If it needs a new container: add to `docker-compose.yml` on the `toolbox` network.
-2. If it's a Python dep: add to `gateway/requirements.txt`.
-3. Add a `@mcp.tool` function to `gateway/server.py`. Write the docstring for a small model — first line is the summary an agent reads to decide whether to call it.
-4. `docker compose build gateway && docker compose up -d --no-deps gateway` (~3 s rebuild + ~5-10 sec downtime, well within MCP reconnect window). **Not** `up --build gateway` — that drags in a whisper Vulkan recompile that OOMs the LXC (see Operations note + gotcha #7).
-5. Connected MCP clients pick up the new tool via `tools/list_changed` notification or on next refresh. For Claude Code: `/reload-plugins`.
+## Limits
 
-For wrapping an external MCP server (like we did with Camoufox), mount it through FastMCP's `create_proxy()` instead of reimplementing. See `gateway/server.py` for the pattern.
+- **x86-64 only.** ARM machines, including Apple Silicon Macs, are not supported.
+- **Speech is slower than real time.** `synthesize_speech` runs on the CPU and takes
+  4 to 10 times as long as the audio it makes, depending on the CPU (about half that
+  with `steps=16`). Fine for narration and voiceover, not for a live conversation.
+- **Transcription speed depends on your hardware.** Measured on a CPU, `base.en`
+  transcribes about 10 times faster than real time, `small.en` about 4 times and
+  `large-v3-turbo` about 1.5 times. A GPU makes the large models practical.
+- **The browser handles one page at a time.** Up to 8 more browser calls wait, each
+  for up to 30 seconds, and only one multi-step browser session can be open at once.
+- **Search results depend on your network.** Search engines decide whether to
+  answer automated queries; when all of them refuse, `search_web` says so instead of
+  returning an empty list.
+- **No OCR.** `convert_document` and `pdf_extract_text` read the text in documents.
+  Scanned pages and images come back without text.
+- **Downloads ride inside the response.** `download_media` returns the file as
+  base64 and refuses files over 25 MB unless the agent raises `max_mb`.
 
-## Boot survival
+## More
 
-Verified end-to-end:
-- LXC `onboot: 1` (Proxmox), Docker enabled inside, all containers `restart: unless-stopped`
-- Gateway eager-init repopulates all tools at startup
-- Firefox binary persists in container writable layer
-- LXC reboot → all tools live in ~10-15 sec, no manual intervention
+- [AGENT_HANDOFF.md](AGENT_HANDOFF.md): a guide for the agents themselves.
+- [docs/operations.md](docs/operations.md): how it fits together, everyday commands,
+  pinned versions and how to update them, debugging, adding a tool, and lessons
+  learned the hard way.
 
-## Agents
+## Built on
 
-For wiring an agent to actually USE this toolbox effectively (tool selection rules, workflow recipes, gotchas to tell the agent about), see [AGENT_HANDOFF.md](./AGENT_HANDOFF.md). It's written so any MCP-capable agent — Claude Code, Hermes-style harnesses, custom local-model agents — can be onboarded with one document.
+[FastMCP](https://github.com/PrefectHQ/fastmcp), [SearXNG](https://github.com/searxng/searxng),
+[Crawl4AI](https://github.com/unclecode/crawl4ai), [Camoufox](https://github.com/daijro/camoufox),
+[camoufox-mcp](https://github.com/whit3rabbit/camoufox-mcp),
+[camoufox-js](https://github.com/apify/camoufox-js),
+[uBlock Origin](https://github.com/gorhill/uBlock),
+[MarkItDown](https://github.com/microsoft/markitdown),
+[Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF),
+[yt-dlp](https://github.com/yt-dlp/yt-dlp), [whisper.cpp](https://github.com/ggml-org/whisper.cpp)
+and [OmniVoice](https://github.com/k2-fsa/OmniVoice). The browser's GeoIP data is
+GeoLite2 by [MaxMind](https://www.maxmind.com). Each keeps its own license; the
+build downloads them, and this repository does not include their code.
 
 ## License
 
-MIT
+MIT. See [LICENSE](LICENSE).
