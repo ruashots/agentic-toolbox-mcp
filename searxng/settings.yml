@@ -16,6 +16,10 @@ search:
     - json    # required so the gateway can consume results
 
 server:
+  # SearXNG uses this key to sign its image and favicon proxy links. Only the
+  # toolbox gateway can reach this instance and both proxies are off, so the
+  # placeholder is harmless here. Replace it with any random string if you like,
+  # for example the output of: openssl rand -hex 32
   secret_key: "REPLACE_AT_DEPLOY"
   limiter: false   # we ARE bots; this is a private instance on a trusted LAN
   image_proxy: false
