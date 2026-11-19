@@ -40,8 +40,8 @@ RUN npm install -g pnpm@9.15.9
 WORKDIR /opt/camoufox-mcp
 COPY camoufox-mcp/package.json camoufox-mcp/pnpm-lock.yaml camoufox-mcp/.npmrc ./
 RUN pnpm install --frozen-lockfile --prod
-COPY camoufox-mcp/patch-camoufox-js.sh camoufox-mcp/install-browser.sh camoufox-mcp/selftest.mjs ./
-RUN ./patch-camoufox-js.sh
+COPY camoufox-mcp/patch-camoufox-js.sh camoufox-mcp/patch-dns-sinkhole.py camoufox-mcp/install-browser.sh camoufox-mcp/selftest.mjs ./
+RUN ./patch-camoufox-js.sh && python3 patch-dns-sinkhole.py
 
 # The Camoufox browser, frozen at one exact release of github.com/daijro/camoufox.
 # install-browser.sh takes the release zip from gateway/vendor/ if it is there (offline
