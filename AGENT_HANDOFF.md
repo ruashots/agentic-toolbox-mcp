@@ -26,13 +26,13 @@ Then act on the answer.
 ### (1) Nothing is set up
 
 You are going to install the toolbox. That is a real commitment on the user's
-machine: a first build that downloads about 5.5 GB, about 40 GB of images and models
-on disk afterwards, and seven containers that keep running. Confirm before you
+machine: a first build that downloads about 5.5 GB, about 48 GB of images, build
+cache and models on disk afterwards, and seven containers that keep running. Confirm before you
 start.
 
 Ask the user: *"Should it run on this machine, or on another one (a home server, a
-VM)?"* It needs an x86-64 machine with Docker and Docker Compose v2, about 50 GB of
-free disk and 8 GB of RAM. No GPU is needed.
+VM)?"* It needs an x86-64 machine with Docker and Docker Compose v2, at least 55 GB
+of free disk and 8 GB of RAM. No GPU is needed.
 
 Then, on the chosen machine:
 
@@ -106,7 +106,7 @@ Once `ping` works, you have every tool. Carry on.
 | Get metadata and captions for a video | `extract_video` | yt-dlp, works with YouTube and many other sites. Returns title, uploader, duration, description and the English auto-captions when they exist. **Try this first** before transcribing: many videos have free captions. |
 | Get the audio or video **file** itself | `download_media` | Takes the best stream as is, with no re-encoding, and returns it as base64 (`content_b64`): decode and save it. `kind="audio"` or `"video"`. Files over `max_mb` (default 25) are refused. Use it when you need the media, not its text. |
 | Transcribe audio or video that has no captions | `transcribe_audio` | Local Whisper, on the toolbox's GPU if it has one, otherwise on its CPU. See **Model selection**: bigger is not always better. |
-| Turn text into speech | `synthesize_speech` | CPU only, slower than real time. Synthesize the whole script in **one** call. See **Text to speech** below. |
+| Turn text into speech | `synthesize_speech` | CPU only, slower than real time. Split long scripts into paragraphs or sentences. See **Text to speech** below. |
 | See which tools work right now | `toolbox_status` | Each tool's latest scheduled check: up, down (a known outage) or not checked yet. |
 | Check the toolbox is reachable | `ping` | Returns `"pong"`. |
 
@@ -128,15 +128,18 @@ Switch to `cf_browse` when you see any of:
   Manager.
 - Crawl4AI returns an error that mentions a challenge or a 403.
 
-For hostile sites, call `cf_browse` with `humanize: true`. It adds realistic mouse
-movement and human-like timing.
+Realistic mouse movement and human-like timing (`humanize`) are on by default; keep
+them on for hostile sites.
 
 ### `cf_browse` or `cf_browse_session_*`
 
 One page to read: `cf_browse`. It starts a browser for the call and closes it after.
 
 Several steps: start a session, do the steps, close it. The session keeps cookies,
-login state and the viewport between calls.
+login state and the viewport between calls. **Close it with
+`cf_browse_session_close` as soon as you are done:** while a session is open it holds
+the browser, and every other browser call (yours or another agent's) fails after
+waiting 30 seconds.
 
 ### `convert_document` or `pdf_extract_text`
 
@@ -161,10 +164,11 @@ not "always the biggest":
 | Captions people will read, technical talks, several speakers | `large-v3` | The most accurate on real speech. |
 | Good quality, still quick | `small.en` | The sweet spot for general English. |
 | Song lyrics | `medium.en` | In practice it beats `large-v3-turbo` on lyrics. |
-| Not English | a model without `.en` (`tiny`, `base`, `small`, `medium`, `large-v3`) | Needed to detect and transcribe other languages. |
+| Not English | a model without `.en` (`tiny`, `base`, `small`, `medium`, `large-v3`), with `language` set (`es`, `fr`, ...) | Without `language`, Whisper assumes English. |
 
-If you do not know what is in the audio, start with `base.en` to see the language and
-the shape, then transcribe again with the right model if you need precision.
+If you do not know the language, use a model without `.en` and `language="auto"`: the
+answer's `language` field says what was detected. Then transcribe again with the
+right model if you need precision.
 
 Speed depends on the toolbox's hardware. On an AMD Radeon RX 5700 XT, `base.en` runs
 about 80 times faster than real time and `large-v3` about 8 to 12 times. On a CPU,
@@ -181,22 +185,23 @@ fall back to `transcribe_audio` when `extract_video` returns `transcript: None`.
 
 ### Text to speech
 
-Three rules, in order of how much time they save:
+Three rules:
 
-1. **One call for the whole script.** Each call has a fixed cost, so short calls are
-   slow per second of audio. Splitting a narration into lines can take several times
-   longer for the same audio. If you need one file per line, synthesize once and cut
-   the returned WAV yourself.
+1. **Split long scripts into paragraphs or sentences.** Each call adds only about a
+   second, and long texts get slower per second of audio: 39 seconds of speech took
+   186 s as one call and 104 s as seven sentence calls. With a cloned voice the
+   difference is small (one call was a little faster), so do what suits the job.
 2. **Always pass `reference_text` with `voice_reference`.** Without it the model first
    transcribes the reference clip, which on a CPU costs more than the speech you
-   wanted.
+   wanted (and the first time, downloads a 1.6 GB Whisper model to do it).
 3. **`steps=16` when the words matter more than the delivery** (drafts, checking
    pronunciation). It is roughly twice as fast. Keep the default 32 for anything a
    person will listen to.
 
-It is slower than real time: budget 4 to 10 times the length of the audio at the
-default quality, depending on the toolbox's CPU, and about half that with
-`steps=16`. Tell the user before you start a long job, not after. For anything interactive or streaming, it is the wrong tool.
+It is slower than real time: budget about 3 to 5 times the length of the audio at
+the default quality, depending on the toolbox's CPU, and about half that with
+`steps=16`. Tell the user before you start a long job, not after. For anything
+interactive or streaming, it is the wrong tool.
 
 To clone a voice, use a 3 to 10 second clip in the same language as the text. Longer
 clips do not help and can hurt. A clip in another language works, but its accent
@@ -212,7 +217,7 @@ carries over.
 1. search_web(query, max_results=8)
 2. fetch_page(url) for the top 3 to 5 results (in parallel if your runtime can)
 3. Combine what the pages say
-4. If a key source was blocked, retry that one with cf_browse(humanize=true)
+4. If a key source was blocked, retry that one with cf_browse(url)
 ```
 
 ### Take apart a YouTube video
@@ -240,7 +245,7 @@ For "just read it to me" plain text:
 
 ```
 1. fetch_page(url): try the cheap path first
-2. If empty or blocked: cf_browse(url, humanize=true, captchaPolicy="detect")
+2. If empty or blocked: cf_browse(url, captchaPolicy="detect")
 3. If a challenge is detected: cf_browse with captchaPolicy="attempt"
    (returns details about the challenge and a screenshot to look at)
 4. For a flow with several steps: cf_browse_session_start, then
@@ -250,7 +255,7 @@ For "just read it to me" plain text:
 ### Look at a page
 
 ```
-1. cf_browse_screenshot(url, humanize=true, fullPage=true)
+1. cf_browse_screenshot(url, fullPage=true)
 2. Use your own vision on the image (or pass it to a vision model)
 3. Check what you see against the text from cf_browse
 ```
@@ -272,7 +277,7 @@ For "just read it to me" plain text:
 - **The browser handles one page at a time.** Up to 8 more browser calls wait in a
   queue for up to 30 seconds each; beyond that a call fails with "Too many concurrent
   browse requests" or "Timed out waiting for a browse slot". Only one multi-step
-  session can be open at a time.
+  session can be open at a time, and while it is open no other browser call runs.
 - **`maxChars` is at least 1000 on `cf_browse`.** Smaller values fail validation.
 - **Browser sessions close after 10 minutes without a call.** Every session call
   resets that timer.

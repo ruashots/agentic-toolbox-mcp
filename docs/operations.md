@@ -53,15 +53,17 @@ Three patterns hold it together:
 
 ## Health checks
 
-`tb-watch` (code in `gateway/watch.py`) calls every tool through the public MCP
-endpoint, the same way an agent does, with fixed test inputs, and checks the answer:
+`tb-watch` (code in `gateway/watch.py`) calls the tools through the public MCP
+endpoint, the same way an agent does, with fixed test inputs, and checks the answer.
+There is one check for each tool, and one for all the `cf_*` tools, which share a
+browser:
 
 | Check | Test job | Every |
 |---|---|---|
 | ping | `ping` returns pong | 1 min |
 | search_web | a search for "wikipedia" returns results | 10 min |
 | fetch_page | wikipedia.org contains "Wikipedia" | 10 min |
-| cf_browse | the stealth browser loads python.org (one check covers all 17 `cf_*` tools: they share one browser) | 10 min |
+| cf_browse | the stealth browser loads python.org and the answer has its page title (one check covers all 17 `cf_*` tools: they share one browser) | 10 min |
 | convert_document | `gateway/fixtures/check.html` converts and its marker is found | 30 min |
 | pdf_extract_text | `gateway/fixtures/check.pdf` gives its marker back | 30 min |
 | transcribe_audio | `gateway/fixtures/check.wav` transcribes to "...health check..." | 1 h |
@@ -92,13 +94,17 @@ Run these from the repository folder.
 # What works right now (the watcher's latest results)
 docker logs --tail 30 tb-watch
 
-# Restart one service; the other tools stay up
-docker compose restart gateway
+# Restart one service. Restarting tts or whisper only affects its own tool;
+# restarting the gateway takes every tool offline for a few seconds.
+docker compose restart tts
 
-# Rebuild and restart only the gateway after changing its code.
+# Rebuild and restart only the gateway after changing gateway/server.py.
 # Not `docker compose up --build gateway`: through depends_on that also rebuilds
 # whisper, whose compile is slow and memory hungry.
 docker compose build gateway && docker compose up -d --no-deps gateway
+
+# The watcher has its own image. After changing gateway/watch.py or the fixtures:
+docker compose build gateway watch && docker compose up -d --no-deps gateway watch
 
 # List the tools the gateway serves
 docker exec tb-gateway python -c "
@@ -110,9 +116,10 @@ async def main():
 asyncio.run(main())
 "
 
-# Free the disk space the first build left behind (about 7 GB). It asks first, and
-# only removes build cache: nothing running is touched, but the next rebuild of an
-# image starts from scratch.
+# Free the disk space the build cache takes. It asks first. It removes ALL of
+# Docker's build cache on this machine, other projects' included, and the next
+# rebuild of any image starts from scratch. On a fresh install Docker reported
+# 16 GB and the disk got back about 7 GB (the images share part of that data).
 docker builder prune -a
 ```
 
@@ -155,7 +162,12 @@ Not pinned, on purpose or by nature:
   two releases, so a checksum would break within days.
 - **Model files** download from Hugging Face the first time they are needed:
   Whisper models into the `whisper-models` volume, the OmniVoice voice model into
-  `tts-models`. They are not checksum-pinned.
+  `tts-models`. They are not checksum-pinned, and the speech service asks Hugging
+  Face for a newer voice model each time it starts and downloads it if it changed.
+  Cloning a voice without the clip's transcript also downloads
+  `openai/whisper-large-v3-turbo` (about 1.6 GB) into `tts-models`.
+- **The NodeSource setup script**, which adds Node's package source, is fetched at
+  build time. The Node package it installs is pinned.
 
 ## Updating a pinned part
 
@@ -196,16 +208,17 @@ Per part:
 
 ### Building without downloading the browser
 
-The browser zip is about 1.3 GB. To build offline, or if its release ever
-disappears, put the same file in `gateway/vendor/` first. The build uses it and
-still checks its sha256:
+The browser zip is about 1.3 GB. If its release ever disappears, or to avoid
+downloading it again, put the same file in `gateway/vendor/` first. The build uses
+it and still checks its sha256:
 
 ```bash
 sha256sum gateway/vendor/camoufox-156.0.1-beta.33-lin.x86_64.zip
 # 730d731153b2a16cac238a0b4a7f849c04d1fd6181c09ec6af29695af0407af8
 ```
 
-uBlock Origin and the GeoIP database are still downloaded during that build.
+The rest of the build still downloads its packages, uBlock Origin and the GeoIP
+database.
 
 ## Debugging without logs
 
@@ -233,9 +246,11 @@ When the same missing capability keeps coming up across agents:
    `gateway/requirements.lock`, with its own dependencies.
 3. Add an `@mcp.tool` function to `gateway/server.py`. Write the docstring for a
    small model: its first line is what an agent reads to decide whether to call it.
-4. Add a real-job check to `CHECKS` in `gateway/watch.py`, and what to use instead
-   while it is down to `_ALTERNATIVES` in `server.py`.
-5. `docker compose build gateway && docker compose up -d --no-deps gateway`.
+4. Add a real-job check to `CHECKS` and a short description to `DESCRIPTIONS` in
+   `gateway/watch.py`, and what to use instead while it is down to `_ALTERNATIVES`
+   in `server.py`.
+5. `docker compose build gateway watch && docker compose up -d --no-deps gateway watch`
+   (the watcher has its own image, so it needs the rebuild too).
 6. Agents see the new tool when they next connect. In Claude Code, start a new session.
 
 To wrap an existing MCP server, mount it with FastMCP's `create_proxy()` as the
@@ -276,7 +291,8 @@ reboot.
    installed at build time from one pinned release, so the driver never downloads.
 9. **"Browser available" means nothing.** `cf_camoufox_status` reported the browser
    as available for seven weeks while every page load failed. Only a real page load
-   proves browsing works, and that is what the watcher does.
+   proves browsing works, so the watcher loads python.org and looks for its page
+   title (not just the word "python", which every answer contains in its URL).
 10. **Ad-blocking DNS used to fail most pages.** DNS filters such as AdGuard Home and
     Pi-hole answer 0.0.0.0 or 127.0.0.1 for tracker hosts. The browser's network
     guard blocked those requests, which is right, and then failed the whole page,

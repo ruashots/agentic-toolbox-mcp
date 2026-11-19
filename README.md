@@ -16,15 +16,16 @@ Docker Compose command and needs no accounts or API keys.
 - **One URL for every agent.** Point Claude Code, your own agents and anything else
   that speaks MCP at the same endpoint. Add a tool once and every agent that connects
   gets it. Nothing to install per agent.
-- **Your agent finds out when a tool is broken.** A watcher runs a real job through
-  every tool on a schedule. When a call fails, the error tells the agent whether that
-  tool is a known outage, since when, and which tool to use instead.
+- **Your agent finds out when a tool is broken.** A watcher runs real test jobs on a
+  schedule: one for each tool, and one for the 17 browser tools, which share a
+  browser. When a call fails, the error tells the agent whether that tool is a known
+  outage, since when, and which tool to use instead.
 - **It keeps no record of what agents ask.** Container logs are off, scratch files
   live in RAM, and the caches and audit logs of the services underneath are switched
   off.
 - **Rebuilds give you the same toolbox.** Base images, every Python and Node
-  package, and the browser build are pinned to exact versions and checked at build
-  time.
+  package, and the browser build are pinned to exact versions, and the browser
+  download is checked against its checksum.
 - **Nothing to sign up for.** It runs on your machine. No accounts, no API keys, no
   paid service in between.
 
@@ -49,7 +50,7 @@ other sites yt-dlp supports.
 ## Install
 
 **You need** an x86-64 machine with Docker and Docker Compose v2 (Linux, or Windows
-through WSL 2), about 50 GB of free disk and 8 GB of RAM. No GPU.
+through WSL 2), at least 55 GB of free disk and 8 GB of RAM. No GPU.
 
 The first build downloads about 5.5 GB. On a 32-thread machine with a fast
 connection the toolbox was up 5 minutes after the clone; smaller machines take
@@ -93,7 +94,7 @@ an agent through connecting itself.
   `base.en`, up to 3 GB for `large-v3`). They are kept in a Docker volume.
 - The first speech request downloads the voice model, about 3 GB. Until that is
   done, `toolbox_status` can show `synthesize_speech` as down.
-- Once running, the toolbox uses about 3.5 GB of RAM, plus about 2.5 GB while
+- Once running, the toolbox uses about 4 to 5 GB of RAM, plus about 2.5 GB while
   `large-v3-turbo` transcribes (the biggest models take more).
 
 <details>
@@ -117,21 +118,22 @@ the override, transcription runs on the CPU. NVIDIA GPUs are not set up.
 </details>
 
 <details>
-<summary><b>If the browser download fails, or you build offline</b></summary>
+<summary><b>If the browser download fails</b></summary>
 
 The gateway build downloads the Camoufox browser (1.3 GB) from its official
-release and stops unless the file's sha256 matches the pinned one. To build without
-that download, put the same zip in `gateway/vendor/` first; see
-[gateway/vendor/README.md](gateway/vendor/README.md).
+release and stops unless the file's sha256 matches the pinned one. If that release
+ever disappears, or you already have the file, put the same zip in `gateway/vendor/`
+first and the build uses it; see [gateway/vendor/README.md](gateway/vendor/README.md).
+The rest of the build still downloads its packages.
 
 </details>
 
 ## How your agent finds out a tool is broken
 
-The `tb-watch` container calls every tool through the same endpoint your agents
-use, with fixed test inputs, from every minute to every six hours depending on the
-tool. A tool that fails twice in a row is marked down, and one good check marks it
-up again.
+The `tb-watch` container calls the tools through the same endpoint your agents use,
+with fixed test inputs: one check for each tool, and one browser check for all the
+`cf_*` tools, from every minute to every six hours depending on the tool. A tool
+that fails twice in a row is marked down, and one good check marks it up again.
 
 Every failing call then ends with a note for the agent. When search is down, an
 agent sees:
@@ -155,7 +157,8 @@ What that means in practice:
 - The tools fetch any URL they are given, including addresses on your own network,
   such as your router's page or other services. The `cf_*` browser tools refuse
   private and local addresses; `fetch_page`, `convert_document`, `pdf_extract_text`,
-  `transcribe_audio`, `download_media` and `synthesize_speech` do not.
+  `extract_video`, `download_media`, `transcribe_audio` and `synthesize_speech` do
+  not.
 - `convert_document`, `pdf_extract_text` and `transcribe_audio` also accept file
   paths, and read them inside the gateway container.
 - Port 8085 serves Stirling-PDF's own web page, with its login turned off. The
@@ -186,7 +189,11 @@ What leaves your machine:
 - The watcher's test jobs: a search for "wikipedia" and visits to wikipedia.org and
   python.org every 10 minutes, and the details and audio of one 19-second YouTube
   video every 6 hours.
-- Model downloads from Hugging Face, the first time transcription or speech is used.
+- Model downloads from Hugging Face. Each Whisper model downloads the first time it
+  is used. The voice model downloads on the first speech request, and the speech
+  service asks Hugging Face for a newer version each time it starts. Cloning a voice
+  without the clip's transcript also downloads a Whisper model (about 1.6 GB) into the
+  speech service.
 - A lookup of your public IP address (api.ipify.org, or a similar service if that
   fails) each time the browser starts. Camoufox uses it to match the browser's time
   zone and language to your IP.
@@ -214,13 +221,15 @@ model:
 # Back up
 docker run --rm -v toolbox_tts-models:/v:ro -v "$PWD":/backup alpine tar czf /backup/tts-models.tgz -C /v .
 
-# Restore, on a new install that has been started once (so the volume exists)
-docker compose stop tts
+# Restore, on a new install, before its first start
+docker compose up --no-start --build
 docker run --rm -v toolbox_tts-models:/v -v "$PWD":/backup alpine tar xzf /backup/tts-models.tgz -C /v
-docker compose start tts
+docker compose up -d
 ```
 
-For Whisper models, use `whisper-models` and `whisper` in place of `tts-models` and `tts`.
+For Whisper models, use `whisper-models` in place of `tts-models`. The speech service
+still asks Hugging Face whether the voice model has changed when it starts, and
+downloads it again if it has.
 
 `docker compose down -v` removes the containers and every volume, which deletes the
 downloaded models too.
@@ -229,13 +238,16 @@ downloaded models too.
 
 - **x86-64 only.** ARM machines, including Apple Silicon Macs, are not supported.
 - **Speech is slower than real time.** `synthesize_speech` runs on the CPU and takes
-  4 to 10 times as long as the audio it makes, depending on the CPU (about half that
-  with `steps=16`). Fine for narration and voiceover, not for a live conversation.
+  about 3 to 5 times as long as the audio it makes, depending on the CPU (about half
+  that with `steps=16`). Fine for narration and voiceover, not for a live
+  conversation.
 - **Transcription speed depends on your hardware.** Measured on a CPU, `base.en`
   transcribes about 10 times faster than real time, `small.en` about 4 times and
   `large-v3-turbo` about 1.5 times. A GPU makes the large models practical.
 - **The browser handles one page at a time.** Up to 8 more browser calls wait, each
-  for up to 30 seconds, and only one multi-step browser session can be open at once.
+  for up to 30 seconds. A multi-step browser session holds the browser until it is
+  closed, or for 10 minutes without a call, so other browser calls fail while one is
+  open.
 - **Search results depend on the engines.** SearXNG asks bing, yandex, yep and
   others; each decides whether to answer automated queries from your network, and
   their results vary in quality. When all of them refuse, `search_web` says so
