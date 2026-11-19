@@ -20,6 +20,19 @@ from pathlib import Path
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
+
+# Expire MCP sessions idle for 15 min. FastMCP 3.4.4 does not expose the MCP SDK's
+# session_idle_timeout, and without it every session a client opens and never
+# DELETEs lives forever: a client opening one every few seconds grew this process
+# to ~11 GB in ~2 days, the host thrashed for hours (connect timeouts), then OOM.
+# Claude Code re-initializes transparently on the resulting 404 (tested 2026-10-02).
+import fastmcp.server.http as _fastmcp_http
+_orig_session_manager_init = _fastmcp_http.FastMCPStreamableHTTPSessionManager.__init__
+def _session_manager_init_with_idle_timeout(self, *args, **kwargs):
+    _orig_session_manager_init(self, *args, **kwargs)
+    if not self.stateless:
+        self.session_idle_timeout = 900
+_fastmcp_http.FastMCPStreamableHTTPSessionManager.__init__ = _session_manager_init_with_idle_timeout
 from markitdown import MarkItDown
 
 SEARXNG_URL = os.environ.get("SEARXNG_URL", "http://searxng:8080")
