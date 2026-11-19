@@ -1,0 +1,4 @@
+# Test and lint tools. The tests also need the gateway's own packages:
+#   pip install -r gateway/requirements.lock -r tests/requirements.txt
+pytest==8.3.5
+ruff==0.11.13
