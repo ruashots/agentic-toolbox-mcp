@@ -236,9 +236,10 @@ downloaded models too.
   `large-v3-turbo` about 1.5 times. A GPU makes the large models practical.
 - **The browser handles one page at a time.** Up to 8 more browser calls wait, each
   for up to 30 seconds, and only one multi-step browser session can be open at once.
-- **Search results depend on your network.** Search engines decide whether to
-  answer automated queries; when all of them refuse, `search_web` says so instead of
-  returning an empty list.
+- **Search results depend on the engines.** SearXNG asks bing, yandex, yep and
+  others; each decides whether to answer automated queries from your network, and
+  their results vary in quality. When all of them refuse, `search_web` says so
+  instead of returning an empty list.
 - **No OCR.** `convert_document` and `pdf_extract_text` read the text in documents.
   Scanned pages and images come back without text.
 - **Downloads ride inside the response.** `download_media` returns the file as
