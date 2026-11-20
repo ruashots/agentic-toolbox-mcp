@@ -6,10 +6,10 @@ metadata and downloads, speech-to-text and text-to-speech. It installs with one
 Docker Compose command and needs no accounts or API keys.
 
 <p align="center">
-  <img src="docs/media/demo.svg" alt="Terminal output of examples/demo.py: a web search, a Wikipedia page read as markdown, python.org loaded in the stealth browser, a YouTube video's metadata, and 10 of 10 health checks passing, each with its time in seconds." width="860">
+  <img src="docs/media/demo.svg" alt="Terminal output of the toolbox demo: a web search, a Wikipedia page read as markdown, python.org loaded in the stealth browser, a YouTube video's metadata, and 10 of 10 health checks passing, each with its time in seconds." width="860">
 </p>
 
-<sub>Real output of [`examples/demo.py`](examples/demo.py) against a fresh install. Run it yourself after installing.</sub>
+<sub>Real output of [`gateway/demo.py`](gateway/demo.py) against a fresh install. Run it yourself after installing.</sub>
 
 ## Why use it
 
@@ -65,7 +65,7 @@ docker compose up -d --build
 Give it two minutes after that command returns, then see it work:
 
 ```bash
-docker exec -i tb-gateway python - < examples/demo.py
+docker exec tb-gateway python demo.py
 ```
 
 The demo makes a few real calls and ends with the watcher's health checks, whose

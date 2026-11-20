@@ -1,13 +1,13 @@
 """See the toolbox work: a few real tool calls, and what came back.
 
-Run it inside the gateway container, which already has the MCP client library:
+It is part of the gateway image, so it runs the same from any shell:
 
-    docker exec -i tb-gateway python - < examples/demo.py
+    docker exec tb-gateway python demo.py
 
 It takes under a minute. Set DEMO_SVG to also save the output as an image
 (docs/media/demo.svg is made this way):
 
-    docker exec -i -e DEMO_SVG=/app/demo.svg tb-gateway python - < examples/demo.py
+    docker exec -e DEMO_SVG=/app/demo.svg tb-gateway python demo.py
     docker cp tb-gateway:/app/demo.svg docs/media/demo.svg
 
 (/app, not /tmp: /tmp lives in RAM in the container, and docker cp cannot reach it.)
@@ -109,7 +109,7 @@ async def main():
 
     svg = os.environ.get("DEMO_SVG")
     if svg:
-        console.save_svg(svg, title="docker exec -i tb-gateway python - < examples/demo.py")
+        console.save_svg(svg, title="docker exec tb-gateway python demo.py")
 
 
 asyncio.run(main())

@@ -65,7 +65,7 @@ RUN d=$(readlink -f node_modules/camoufox-mcp-server) \
     && rm "$d/selftest.mjs"
 
 WORKDIR /app
-COPY server.py watch.py ./
+COPY server.py watch.py demo.py ./
 COPY fixtures/ /app/fixtures/
 
 EXPOSE 8000

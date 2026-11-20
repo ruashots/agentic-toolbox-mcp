@@ -311,11 +311,11 @@ reboot.
 
 ## Making the README images
 
-`docs/media/demo.svg` is the real output of `examples/demo.py` against a fresh
+`docs/media/demo.svg` is the real output of `gateway/demo.py` against a fresh
 install:
 
 ```bash
-docker exec -i -e DEMO_SVG=/app/demo.svg tb-gateway python - < examples/demo.py
+docker exec -e DEMO_SVG=/app/demo.svg tb-gateway python demo.py
 docker cp tb-gateway:/app/demo.svg docs/media/demo.svg
 ```
 
@@ -324,7 +324,8 @@ from `docs/media/social-card.html` by the toolbox's own browser:
 
 ```bash
 docker cp docs/media/social-card.html tb-gateway:/app/social-card.html
-docker exec -i tb-gateway node --input-type=module - < docs/media/render-card.mjs
+docker cp docs/media/render-card.mjs tb-gateway:/app/render-card.mjs
+docker exec tb-gateway node /app/render-card.mjs
 docker cp tb-gateway:/app/social-card.png docs/media/social-card.png
 ```
 
