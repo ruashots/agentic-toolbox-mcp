@@ -142,7 +142,7 @@ stayed green. Now these are pinned and checked:
 | Part | Pinned how | Where |
 |---|---|---|
 | Camoufox browser 156.0.1-beta.33 | official release zip, sha256 checked at build | `gateway/Dockerfile` (`CAMOUFOX_*`), `gateway/camoufox-mcp/install-browser.sh` |
-| uBlock Origin 1.75.0 (loaded by the browser) | addons.mozilla.org file, sha256 checked | `gateway/Dockerfile` (`UBO_*`) |
+| uBlock Origin 1.75.0 (loaded by the browser), with the filter lists it shipped with | addons.mozilla.org file, sha256 checked; list updates switched off through Firefox's policies | `gateway/Dockerfile` (`UBO_*`), `gateway/camoufox-mcp/install-browser.sh` |
 | Browser driver: camoufox-mcp-server 2.0.7, camoufox-js 0.10.2, playwright-core 1.51.1 and everything under them | pnpm lockfile, `--frozen-lockfile` | `gateway/camoufox-mcp/` |
 | camoufox-js fix for browser 156 | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-camoufox-js.sh` |
 | Browser fix for DNS-blocked trackers | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-dns-sinkhole.py` |

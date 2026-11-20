@@ -46,6 +46,20 @@ python3 -m zipfile -e /tmp/ubo.xpi "$dir/addons/UBO"
 rm -f /tmp/ubo.xpi
 test -f "$dir/addons/UBO/manifest.json"
 
+# uBlock Origin keeps the filter lists it shipped with. Left alone it downloads about
+# ten lists from CDNs each time the browser starts (every start is a fresh profile).
+# The setting reaches it through Firefox's enterprise policies.
+python3 - "$dir/distribution/policies.json" <<'POLICY'
+import json, sys
+path = sys.argv[1]
+doc = json.load(open(path))
+policies = doc["policies"]
+if "3rdparty" in policies:
+    sys.exit("install-browser: policies.json already has a 3rdparty section; merge it by hand")
+policies["3rdparty"] = {"Extensions": {"uBlock0@raymondhill.net": {"userSettings": [["autoUpdate", "false"]]}}}
+json.dump(doc, open(path, "w"), indent=2)
+POLICY
+
 # GeoIP database: camoufox-mcp-server turns geoip on by default, so camoufox-js
 # matches the browser's time zone and language to the machine's public IP.
 # This is the one file that is not frozen: its source (the mirror camoufox-js
