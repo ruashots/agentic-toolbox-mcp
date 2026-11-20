@@ -59,3 +59,13 @@ def test_crawl4ai_errors_are_cut_down_to_what_happened():
     assert server._crawl_error(r) == "net::ERR_HTTP_RESPONSE_CODE_FAILURE at https://example.com/x"
     r = httpx.Response(500, json={"detail": "Blocked by anti-bot protection: Structural: minimal_text on small page"})
     assert server._crawl_error(r).startswith("Blocked by anti-bot protection: Structural")
+
+
+def test_a_bad_link_names_the_link_and_does_not_blame_the_toolbox():
+    url = "https://no-such-host.invalid/report.pdf"
+    for tool, args in (("convert_document", {"source": url}), ("pdf_extract_text", {"source": url})):
+        with pytest.raises(ToolError) as err:
+            call(tool, args)
+        message = str(err.value)
+        assert f"could not download {url}" in message
+        assert "not reachable" not in message

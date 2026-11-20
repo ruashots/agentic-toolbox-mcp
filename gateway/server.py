@@ -73,6 +73,20 @@ def _backend_error(r: httpx.Response) -> str:
     return f"{r.status_code}: {reason or r.text.strip()[:500] or r.reason_phrase}"
 
 
+class SourceError(RuntimeError):
+    """A URL or file the caller gave could not be read. Not a toolbox fault."""
+
+
+def _download(url: str, timeout: float) -> httpx.Response:
+    """Fetch a URL the caller gave. Errors name the URL and do not blame the toolbox."""
+    try:
+        r = httpx.get(url, timeout=timeout, follow_redirects=True)
+        r.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise SourceError(f"could not download {url}: {exc}") from exc
+    return r
+
+
 def _crawl_error(r: httpx.Response) -> str:
     """Crawl4AI wraps the browser's error in its own traceback text; keep what happened."""
     reason = _backend_error(r).split("\n\nCode context:")[0]
@@ -191,10 +205,13 @@ class _ExplainFailures(Middleware):
         except Exception as e:
             if tool == "toolbox_status":
                 raise
+            # Blame the toolbox only when one of its own services could not be reached,
+            # not when the caller's URL could not be (SourceError).
             cause = e
-            while cause is not None and not isinstance(cause, httpx.ConnectError):
+            while cause is not None and not isinstance(cause, (httpx.ConnectError, SourceError)):
                 cause = cause.__cause__ or cause.__context__
-            prefix = "The service behind this tool is not reachable. " if cause is not None else ""
+            backend_down = isinstance(cause, httpx.ConnectError)
+            prefix = "The service behind this tool is not reachable. " if backend_down else ""
             note = _health_note(tool, str(e))
             raise ToolError(f"{prefix}{e}" + (f"\n\n{note}" if note else "")) from e
 
@@ -313,8 +330,7 @@ def convert_document(source: str) -> str:
         source: URL or local path. Local paths must be reachable inside the gateway container.
     """
     if source.startswith(("http://", "https://")):
-        r = httpx.get(source, timeout=60, follow_redirects=True)
-        r.raise_for_status()
+        r = _download(source, timeout=60)
         suffix = Path(source.split("?")[0]).suffix or ".bin"
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as f:
             f.write(r.content)
@@ -435,7 +451,7 @@ def pdf_extract_text(source: str) -> str:
         source: URL or local path to a PDF
     """
     if source.startswith(("http://", "https://")):
-        pdf_bytes = httpx.get(source, timeout=60, follow_redirects=True).content
+        pdf_bytes = _download(source, timeout=60).content
     else:
         pdf_bytes = Path(source).read_bytes()
 
@@ -507,9 +523,9 @@ def transcribe_audio(
                     r = httpx.get(source, timeout=120, follow_redirects=True)
                     r.raise_for_status()
                 except httpx.HTTPError as exc:
-                    raise RuntimeError(f"could not get audio from {source}. yt-dlp said: {ytdlp_error}") from exc
+                    raise SourceError(f"could not get audio from {source}. yt-dlp said: {ytdlp_error}") from exc
                 if r.headers.get("content-type", "").startswith(("text/", "application/json")):
-                    raise RuntimeError(f"could not get audio from {source}. yt-dlp said: {ytdlp_error}")
+                    raise SourceError(f"could not get audio from {source}. yt-dlp said: {ytdlp_error}")
                 audio_path.write_bytes(r.content)
         else:
             shutil.copy(source, audio_path)
@@ -574,9 +590,7 @@ def synthesize_speech(
 
     if voice_reference:
         if voice_reference.startswith(("http://", "https://")):
-            r = httpx.get(voice_reference, timeout=120, follow_redirects=True)
-            r.raise_for_status()
-            ref_bytes = r.content
+            ref_bytes = _download(voice_reference, timeout=120).content
         else:
             payload = voice_reference
             if payload.startswith("data:"):
