@@ -276,8 +276,9 @@ For "just read it to me" plain text:
   URL, or `fetch_page` if it fits.
 - **The browser handles one page at a time.** Up to 8 more browser calls wait in a
   queue for up to 30 seconds each; beyond that a call fails with "Too many concurrent
-  browse requests" or "Timed out waiting for a browse slot". Only one multi-step
-  session can be open at a time, and while it is open no other browser call runs.
+  browse requests" or "Timed out waiting for a browse slot", and the note at the end
+  says the browser is busy, not broken. Only one multi-step session can be open at a
+  time, and while it is open no other browser call runs.
 - **`maxChars` is at least 1000 on `cf_browse`.** Smaller values fail validation.
 - **Browser sessions close after 10 minutes without a call.** Every session call
   resets that timer.

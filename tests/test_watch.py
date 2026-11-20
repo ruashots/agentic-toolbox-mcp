@@ -104,3 +104,29 @@ def test_a_check_without_a_description_does_not_crash_the_watcher(status_file, m
     monkeypatch.setattr(watch, "CHECKS", checks)
     state = watch.State()
     assert state.tools["my_new_tool"]["description"] == "my_new_tool"
+
+
+BUSY_ERRORS = (
+    "ToolError: Timed out waiting for a browse slot.",
+    "ToolError: Too many concurrent browse requests. Try again later.",
+    "ToolError: Too many active sessions. Maximum is 1.",
+)
+
+
+def test_a_busy_browser_is_neither_a_pass_nor_a_failure(status_file):
+    state = watch.State()
+    watch.handle_result(state, "cf_browse", True, 3.0, None)
+    for error in BUSY_ERRORS:
+        wait = watch.handle_result(state, "cf_browse", False, 30.1, error)
+        assert wait == watch.RETRY_AFTER_BUSY_S
+    t = state.tools["cf_browse"]
+    assert t["status"] == "up"
+    assert t["consecutive_failures"] == 0
+    assert t["last_busy"]
+
+
+def test_a_real_browser_failure_still_marks_it_down(status_file):
+    state = watch.State()
+    watch.handle_result(state, "cf_browse", False, 5.0, "ToolError: Connection closed")
+    watch.handle_result(state, "cf_browse", False, 5.0, "ToolError: Connection closed")
+    assert state.tools["cf_browse"]["status"] == "down"

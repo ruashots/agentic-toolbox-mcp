@@ -74,6 +74,11 @@ browser:
 - A tool is marked **down** after 2 failed checks in a row (a first failure is
   checked again after 60 seconds) and **up** after one good check. While a tool is
   down it is checked again at least every 5 minutes.
+- A browser check that fails only because it waited for the browser ("Timed out
+  waiting for a browse slot" and the like: another call or an open multi-step
+  session had it) counts as neither a pass nor a failure, and is tried again a
+  minute later. An agent whose browser call fails that way is told the browser is
+  busy, not that it is down.
 - Agents see the result in the failing call itself. Every tool error ends with a
   line saying whether the tool is a known outage (since when; retrying will not
   help), failed its latest check, or passed it (one retry is reasonable), and which

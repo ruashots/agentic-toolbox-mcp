@@ -125,3 +125,10 @@ def test_a_browser_tool_hears_about_the_shared_browser_check(state):
 
 def test_no_note_when_there_is_nothing_to_say(state):
     assert server._health_note("no_such_tool") == ""
+
+
+def test_a_busy_browser_is_not_reported_as_an_outage(state):
+    fail(state, "cf_browse", 2)  # even if an earlier check had marked it down
+    note = server._health_note("cf_browse", "Timed out waiting for a browse slot.")
+    assert "busy, not broken" in note
+    assert "OUTAGE" not in note

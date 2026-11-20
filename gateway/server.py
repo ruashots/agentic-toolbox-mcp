@@ -112,10 +112,15 @@ def _status_age_s(status: dict) -> float | None:
         return None
 
 
-def _health_note(tool: str) -> str:
+def _health_note(tool: str, error_text: str = "") -> str:
     """One paragraph for an agent whose call just failed: is this a known outage, what now."""
-    status = _read_status()
     check = _check_for(tool)
+    if check == "cf_browse" and any(m in error_text for m in BROWSER_BUSY_MARKERS):
+        return ("[toolbox] The browser is busy, not broken. It handles one page at a time, and an "
+                "open multi-step session (cf_browse_session_*) holds it until the session is closed "
+                "or has had no call for 10 minutes. Try again shortly; if you opened a session, "
+                "close it first.")
+    status = _read_status()
     alt = _ALTERNATIVES.get(check, "")
     if not status:
         return f"[toolbox] No health data available (the watcher is not running). {alt}".strip()
@@ -147,6 +152,8 @@ def _health_note(tool: str) -> str:
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 
+from watch import BROWSER_BUSY_MARKERS
+
 
 class _ExplainFailures(Middleware):
     """Append the health note to every failing tool call, so an agent learns at once
@@ -159,7 +166,8 @@ class _ExplainFailures(Middleware):
             # Proxied tools (the cf_* browser tools) report failure as an error result
             # instead of raising. Add the same note to those.
             if getattr(result, "is_error", False) and tool != "toolbox_status":
-                note = _health_note(tool)
+                text = "\n".join(getattr(c, "text", "") or "" for c in result.content or [])
+                note = _health_note(tool, text)
                 if note:
                     from mcp.types import TextContent
                     result.content = list(result.content or []) + [
@@ -173,7 +181,7 @@ class _ExplainFailures(Middleware):
             while cause is not None and not isinstance(cause, httpx.ConnectError):
                 cause = cause.__cause__ or cause.__context__
             prefix = "The service behind this tool is not reachable. " if cause is not None else ""
-            note = _health_note(tool)
+            note = _health_note(tool, str(e))
             raise ToolError(f"{prefix}{e}" + (f"\n\n{note}" if note else "")) from e
 
 

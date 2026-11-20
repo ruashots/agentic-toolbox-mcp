@@ -133,7 +133,10 @@ The rest of the build still downloads its packages.
 The `tb-watch` container calls the tools through the same endpoint your agents use,
 with fixed test inputs: one check for each tool, and one browser check for all the
 `cf_*` tools, from every minute to every six hours depending on the tool. A tool
-that fails twice in a row is marked down, and one good check marks it up again.
+that fails twice in a row is marked down, and one good check marks it up again. A
+browser check that only had to wait because the browser was busy (another call, or
+an open multi-step session) counts as neither, and agents whose browser call waited
+in vain are told the browser is busy, not broken.
 
 Every failing call then ends with a note for the agent. When search is down, an
 agent sees:

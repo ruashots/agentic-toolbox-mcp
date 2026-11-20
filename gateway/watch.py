@@ -29,7 +29,17 @@ from fastmcp import Client
 GATEWAY_URL = os.environ.get("GATEWAY_MCP_URL", "http://gateway:8000/mcp")
 STATUS_FILE = Path(os.environ.get("STATUS_FILE", "/health/status.json"))
 RETRY_AFTER_FAILURE_S = 60
+RETRY_AFTER_BUSY_S = 60
 FAILURES_TO_MARK_DOWN = 2
+# The browser runs one page at a time, and an open multi-step session holds it.
+# A browser call that failed only because it waited for the browser says one of
+# these: the browser is busy, not broken. The gateway uses the same list to tell
+# agents so.
+BROWSER_BUSY_MARKERS = (
+    "Timed out waiting for a browse slot",
+    "Too many concurrent browse requests",
+    "Too many active sessions",
+)
 PAGE_PROBE = "https://www.wikipedia.org/"
 YOUTUBE_PROBE = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # "Me at the zoo", 19 s, first YouTube video
 
@@ -163,6 +173,14 @@ class State:
         tmp.write_text(json.dumps(payload, indent=2))
         tmp.replace(STATUS_FILE)
 
+    def record_busy(self, name: str):
+        """The tool could not be tried because it was busy: neither a pass nor a failure."""
+        t = self.tools[name]
+        stamp = now()
+        t["last_check"] = iso(stamp)
+        t["last_busy"] = iso(stamp)
+        self.save()
+
     def record(self, name: str, ok: bool, duration: float, error: str | None):
         t = self.tools[name]
         stamp = now()
@@ -207,15 +225,24 @@ async def run_check(state: State, name: str):
             if not str(e).strip():
                 error = traceback.format_exc(limit=2)
         duration = time.monotonic() - start
-        state.record(name, ok, duration, error)
-        print(f"[watch] {name}: {'ok' if ok else 'FAIL'} in {duration:.1f}s" + ("" if ok else f" | {error[:200]}"), flush=True)
-        failures = state.tools[name]["consecutive_failures"]
-        if failures == 0:
-            await asyncio.sleep(interval)
-        elif failures < FAILURES_TO_MARK_DOWN:
-            await asyncio.sleep(RETRY_AFTER_FAILURE_S)  # confirm quickly
-        else:
-            await asyncio.sleep(min(interval, 300))  # while broken, notice recovery quickly
+        await asyncio.sleep(handle_result(state, name, ok, duration, error))
+
+
+def handle_result(state: State, name: str, ok: bool, duration: float, error: str | None) -> float:
+    """Record one check's outcome and return how many seconds to wait before the next."""
+    interval = CHECKS[name][3]
+    if not ok and any(m in (error or "") for m in BROWSER_BUSY_MARKERS):
+        state.record_busy(name)
+        print(f"[watch] {name}: busy in {duration:.1f}s (the browser was in use; not counted)", flush=True)
+        return RETRY_AFTER_BUSY_S
+    state.record(name, ok, duration, error)
+    print(f"[watch] {name}: {'ok' if ok else 'FAIL'} in {duration:.1f}s" + ("" if ok else f" | {error[:200]}"), flush=True)
+    failures = state.tools[name]["consecutive_failures"]
+    if failures == 0:
+        return interval
+    if failures < FAILURES_TO_MARK_DOWN:
+        return RETRY_AFTER_FAILURE_S  # confirm quickly
+    return min(interval, 300)  # while broken, notice recovery quickly
 
 
 async def main():
