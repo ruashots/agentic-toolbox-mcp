@@ -71,6 +71,15 @@ def test_a_bad_link_names_the_link_and_does_not_blame_the_toolbox():
         assert "not reachable" not in message
 
 
+@pytest.mark.parametrize("tool", ["extract_video", "download_media"])
+def test_a_url_that_looks_like_a_ytdlp_option_is_not_run_as_one(tool):
+    # Without "--" before the URL, yt-dlp ran "--version" as its own option, and
+    # "--update-to=nightly" made it contact GitHub. It must be taken as a (bad) URL.
+    with pytest.raises(ToolError) as err:
+        call(tool, {"url": "--version"})
+    assert "'--version' is not a valid URL" in str(err.value)
+
+
 @pytest.mark.parametrize("n", [0, -1, 31])
 def test_search_refuses_a_result_count_outside_1_to_30(n):
     with pytest.raises(ToolError, match="between 1 and 30"):

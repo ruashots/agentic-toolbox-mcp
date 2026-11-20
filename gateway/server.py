@@ -377,7 +377,8 @@ def extract_video(url: str, want_transcript: bool = True) -> dict:
                 "--sub-format", "vtt",
                 "-o", f"{tmp}/%(id)s.%(ext)s",
             ]
-        cmd.append(url)
+        # "--": everything after it is a URL, so a url such as "--exec=..." is not an option.
+        cmd += ["--", url]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=120)
         if result.returncode != 0:
             raise RuntimeError(f"yt-dlp failed: {result.stderr.strip()}")
@@ -425,7 +426,7 @@ def download_media(url: str, kind: str = "audio", quality: str = "best", max_mb:
     with tempfile.TemporaryDirectory() as tmp:
         cmd = [
             "yt-dlp", "--js-runtimes", "node", "--no-warnings",
-            "-f", fmt, "-o", f"{tmp}/media.%(ext)s", url,
+            "-f", fmt, "-o", f"{tmp}/media.%(ext)s", "--", url,
         ]
         result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
         if result.returncode != 0:
@@ -516,7 +517,7 @@ def transcribe_audio(
                     "-x", "--audio-format", "m4a",
                     "--no-warnings",
                     "-o", str(audio_path),
-                    source,
+                    "--", source,
                 ],
                 capture_output=True, text=True, timeout=600,
             )
