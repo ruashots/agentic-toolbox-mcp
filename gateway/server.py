@@ -666,42 +666,6 @@ mcp.mount(
 )
 
 
-async def _camoufox_health_watcher():
-    """Exit the gateway process if the camoufox subprocess goes unreachable.
-
-    Camoufox crashes on some pages (observed: nowsecure.nl triggers an
-    unhandledRejection that kills the camoufox-mcp-server Node.js process).
-    When that happens the FastMCP proxy's STDIO pipe is dead and subsequent
-    cf_* tool calls fail with "Connection closed", with no auto-recovery.
-
-    Solution: poll cf_camoufox_status every 30s. On 2 consecutive failures,
-    os._exit(1). Docker's `restart: unless-stopped` policy on the gateway
-    respawns the container, which respawns the camoufox subprocess via the
-    eager-init below. Total recovery: ~10s of downtime per crash.
-    """
-    from fastmcp import Client
-    consecutive_failures = 0
-    while True:
-        await asyncio.sleep(30)
-        try:
-            async with Client(mcp) as c:
-                await c.call_tool("cf_camoufox_status", {})
-            consecutive_failures = 0
-        except Exception as e:
-            consecutive_failures += 1
-            print(
-                f"[health] camoufox check failed ({consecutive_failures}/2): {e}",
-                flush=True,
-            )
-            if consecutive_failures >= 2:
-                print(
-                    "[health] camoufox unreachable, exiting for docker auto-restart",
-                    flush=True,
-                )
-                import os
-                os._exit(1)
-
-
 async def _init_and_run():
     """Eagerly populate proxy mounts so all child tools are registered before the
     HTTP server accepts connections.
@@ -710,6 +674,9 @@ async def _init_and_run():
     tools/list call. Claude Code's MCP client may receive just the gateway's
     own tools without the 17 cf_* tools that come from the mounted proxy until
     a later list_changed notification.
+
+    If the browser server process dies later, FastMCP starts a new one on the next
+    cf_* call; the call that was running when it died fails with "Connection closed".
     """
     from fastmcp import Client
     async with Client(mcp) as c:
@@ -717,9 +684,6 @@ async def _init_and_run():
         print(f"[startup] {len(tools)} tools registered:", flush=True)
         for t in tools:
             print(f"  - {t.name}", flush=True)
-
-    # Start the watchdog after eager-init confirms the proxy is up.
-    asyncio.create_task(_camoufox_health_watcher())
 
     await mcp.run_async(transport="http", host="0.0.0.0", port=8000, path="/mcp")
 

@@ -46,10 +46,10 @@ Three patterns hold it together:
   lists its own tools once, which starts the browser subprocess. Without this, an
   agent that connects first sees only the gateway's own tools and none of the
   `cf_*` ones.
-- **A dead browser process restarts the gateway.** A background task asks the
-  browser server for its status every 30 seconds. After two failures in a row the
-  gateway exits and Docker starts it again, about 10 seconds of downtime. This only
-  catches a dead process. Whether pages actually load is what the watcher checks.
+- **A dead browser server comes back by itself.** If the browser server process
+  dies, the browser call that was running fails with "Connection closed", and the
+  next browser call starts a new process (FastMCP does this); the gateway keeps
+  running. Whether pages actually load is what the watcher checks.
 
 ## Health checks
 

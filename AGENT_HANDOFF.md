@@ -268,11 +268,8 @@ keeps its headings and tables as markdown.
   names), failed its latest scheduled check (it may be breaking), or passed it (one
   retry is reasonable). `toolbox_status` lists every tool's state. Do not loop on
   retries.
-- **Some pages crash the stealth browser** with `unhandledRejection: TypeError`. Known
-  cases: `bot.sannysoft.com`, and sometimes `nowsecure.nl`. This is a bug in
-  camoufox-mcp 2.0.7. The toolbox notices within a minute and restarts itself, which
-  takes about 10 seconds, but the call that crashed it does not return. Try another
-  URL, or `fetch_page` if it fits.
+- **A browser call that fails with "Connection closed"** ran while the browser server
+  stopped. Call again: the next call starts a new browser server within seconds.
 - **The browser handles one page at a time.** Up to 8 more browser calls wait in a
   queue for up to 30 seconds each; beyond that a call fails with "Too many concurrent
   browse requests" or "Timed out waiting for a browse slot", and the note at the end
