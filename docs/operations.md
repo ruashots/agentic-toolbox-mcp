@@ -155,6 +155,7 @@ stayed green. Now these are pinned and checked:
 | Browser driver: camoufox-mcp-server 2.0.7, camoufox-js 0.10.2, playwright-core 1.51.1 and everything under them | pnpm lockfile, `--frozen-lockfile` | `gateway/camoufox-mcp/` |
 | camoufox-js fix for browser 156 | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-camoufox-js.sh` |
 | Browser fix for DNS-blocked trackers | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-dns-sinkhole.py` |
+| Browser access to your network: addresses an agent gives it, and LAN pages reaching the LAN; never internet pages reaching the LAN | build-time patch, then `lan-selftest.mjs` runs the real guard against 12 made-up requests; the build fails if any answer is wrong | `gateway/camoufox-mcp/patch-lan-access.py`, `gateway/camoufox-mcp/lan-selftest.mjs` |
 | Gateway Python packages | full lock file, each package with the sha256 of its files; the build refuses any other file | `gateway/requirements.lock` |
 | Node 22.23.3 and pnpm 9.15.9 | the nodejs.org and npm registry files, sha256 and sha512 checked at build | `gateway/Dockerfile` (`NODE_*`, `PNPM_SHA512`) |
 | Base images | `@sha256:` digests | every Dockerfile |
@@ -324,8 +325,7 @@ reboot.
     Pi-hole answer 0.0.0.0 or 127.0.0.1 for tracker hosts. The browser's network
     guard blocked those requests, which is right, and then failed the whole page,
     which is not: 7 of 10 common sites failed this way. `patch-dns-sinkhole.py`
-    keeps blocking them and lets the page load. LAN and localhost addresses are
-    still refused.
+    keeps blocking them and lets the page load. Localhost is still refused.
 11. **Crawl4AI's browser shipped with its protections off.** Its default config
     starts Chromium with `--disable-web-security`, which lets a script on any page
     read any other site's answers, including services on your network.
@@ -347,6 +347,14 @@ reboot.
     reads such a page once more, waiting up to 10 seconds for it to show text.
     Waiting for the network to go quiet does not work: web apps keep loading files
     in the background.
+14. **camoufox-mcp refused your whole network.** Its guard blocks every private
+    address, so agents could not use the stealth browser on a router page, a NAS or
+    a dashboard. `patch-lan-access.py` lets the browser open the network addresses
+    an agent gives it, and lets a page on your network reach your network. Requests
+    from internet pages to your network stay blocked: sub-requests, frames,
+    redirects and navigations. The guard decides from the page that made the
+    request, so a site cannot get in by later pointing its own name at a LAN
+    address. `lan-selftest.mjs` checks all of this at build time.
 
 ## Making the README images
 

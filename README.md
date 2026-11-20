@@ -163,10 +163,14 @@ a network you trust, and do not expose it to the internet.
 What that means in practice:
 
 - The tools fetch any URL they are given, including addresses on your own network,
-  such as your router's page or other services. The `cf_*` browser tools refuse
-  private and local addresses; `fetch_page`, `convert_document`, `pdf_extract_text`,
-  `extract_video`, `download_media`, `transcribe_audio` and `synthesize_speech` do
-  not.
+  such as your router's page or other services. The `cf_*` browser tools open the
+  network addresses an agent gives them (10.x, 172.16-31.x, 192.168.x, 100.64-127.x,
+  fc00::/7 and `*.local`), and a page on your network can load its own files and
+  link to other pages there. A page from the internet cannot make the browser send
+  anything to your network. Loopback (`localhost`, 127.x) and link-local addresses
+  stay refused. `fetch_page`, `convert_document`, `pdf_extract_text`,
+  `extract_video`, `download_media`, `transcribe_audio` and `synthesize_speech` have
+  no such limits.
 - A page that `fetch_page` opens cannot read other sites through it. Its browser
   keeps the normal rule between websites, so a script on a fetched page cannot read
   your router's page or the toolbox's own services and send them on. `fetch_page`

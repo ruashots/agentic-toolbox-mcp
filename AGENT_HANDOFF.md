@@ -279,8 +279,10 @@ keeps its headings and tables as markdown.
 - **`maxChars` is at least 1000 on `cf_browse`.** Smaller values fail validation.
 - **Browser sessions close after 10 minutes without a call.** Every session call
   resets that timer.
-- **The browser tools refuse private and local addresses**, such as `192.168.x.x` or
-  `localhost`. The other tools do not.
+- **The browser tools open addresses on your network**, such as `192.168.x.x`,
+  `10.x.x.x` or `nas.local`, when you give them the address. They refuse `localhost`
+  and `127.x`, and a page from the internet cannot make them reach your network.
+  The other tools have no limits on addresses.
 - **`transcribe_audio` takes URLs as `source`.** It downloads the audio itself; you do
   not need to download first.
 - **`convert_document` does not transcribe audio or read images.** It tells you so

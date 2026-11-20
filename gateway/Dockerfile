@@ -73,6 +73,15 @@ ARG UBO_URL=https://addons.mozilla.org/firefox/downloads/file/5034826/ublock_ori
 ARG UBO_SHA256=5b74415860456370644bd80f16125e865b0e6c356bb5dfcfb84069967eaa5287
 RUN --mount=type=bind,source=vendor,target=/vendor ./install-browser.sh
 
+# Let the cf_* tools open addresses on your own network, and prove the rule against the
+# real request guard: LAN pages may reach your network, internet pages may not.
+COPY camoufox-mcp/patch-lan-access.py camoufox-mcp/lan-selftest.mjs ./
+RUN python3 patch-lan-access.py \
+    && d=$(readlink -f node_modules/camoufox-mcp-server) \
+    && cp lan-selftest.mjs "$d/lan-selftest.mjs" \
+    && node "$d/lan-selftest.mjs" \
+    && rm "$d/lan-selftest.mjs"
+
 # Prove driver + protocol library + browser work together before this image can replace
 # the running one. Runs from inside the server package so it resolves the same camoufox-js.
 RUN d=$(readlink -f node_modules/camoufox-mcp-server) \
