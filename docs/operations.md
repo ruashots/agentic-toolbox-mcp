@@ -9,6 +9,8 @@ what went wrong before so you do not repeat it. For installing it, see the
 - [Everyday commands](#everyday-commands)
 - [Pinned versions](#pinned-versions)
 - [Updating a pinned part](#updating-a-pinned-part)
+- [Privacy details](#privacy-details)
+- [Models and backups](#models-and-backups)
 - [Debugging without logs](#debugging-without-logs)
 - [Adding a tool](#adding-a-tool)
 - [Starting on boot](#starting-on-boot)
@@ -39,7 +41,7 @@ itself (Markitdown and yt-dlp).
 Two ports are published on the host:
 
 - **8000**, the MCP endpoint, open to your network (agents on other machines connect
-  here). There is no login; see the README's security section.
+  here). There is no login; see the README's security and privacy section.
 - **8085**, Stirling-PDF's own web page, with its login off, also open to your
   network. The gateway reaches Stirling over the internal Docker network, so the
   toolbox works the same with this port closed: delete the two `ports` lines under
@@ -248,9 +250,79 @@ sha256sum gateway/vendor/camoufox-156.0.1-beta.33-lin.x86_64.zip
 The rest of the build still downloads its packages, uBlock Origin and the GeoIP
 database.
 
+## Privacy details
+
+The toolbox keeps no record of what agents ask for or get back, on disk or in logs:
+
+- Container logs are off for every service. The watcher keeps a small log of its own
+  test jobs, never of agent requests.
+- Downloads, uploads, converted files, audio, and the browsers' profiles and caches
+  are kept in RAM and disappear when a container restarts. No core dumps or Java heap
+  dumps are written, and `fetch_page`'s browser keeps no crash reports. When the
+  machine runs short of memory, Linux can move what is in RAM to its swap area on
+  disk; to keep these files off disk entirely, run the toolbox on a machine without
+  swap, or with encrypted swap.
+- Both browsers start empty for every call. A multi-step browser session keeps its
+  cookies until it is closed, or after 10 minutes without a call.
+- Crawl4AI's page cache, log files and Redis snapshots, Stirling-PDF's audit trail
+  and analytics, the access logs of the speech services, FastMCP's update check and
+  onnxruntime's usage telemetry are all off.
+
+What leaves the machine:
+
+- What agents ask for. Searches go to search engines through SearXNG, and pages,
+  videos and files are fetched from their sites.
+- The watcher's test jobs: a search for "wikipedia" and visits to wikipedia.org and
+  python.org every 10 minutes, and the details and audio of one 19-second YouTube
+  video every 6 hours.
+- Model downloads from Hugging Face, each only the first time it is needed: a
+  Whisper model the first time it is used, the voice model on the first speech
+  request, and, for a voice clone without the clip's transcript, a Whisper model
+  (about 1.6 GB) for the speech service. Every model is pinned to one version, and
+  a Whisper model whose checksum does not match is deleted instead of used. Once
+  downloaded, the speech service starts without contacting Hugging Face.
+- When SearXNG starts, it downloads the ClearURLs list of tracking parameters
+  (rules1.clearurls.xyz) and uses it to strip them from result links.
+- Each time the stealth browser starts: a lookup of the public IP address
+  (api.ipify.org, or a similar service if that fails), which Camoufox uses to match
+  the browser's time zone and language, and Firefox's media plugins, fetched the way
+  stock Firefox does (aus5.mozilla.org, OpenH264 from ciscobinary.openh264.org,
+  Widevine from Google's download servers). Camoufox keeps this so that sites cannot
+  tell it apart from stock Firefox.
+
+What websites and search engines record about the requests they receive is outside
+the toolbox's control.
+
+## Models and backups
+
+The toolbox holds no data of yours. Every Docker volume holds files it downloads or
+rebuilds on its own:
+
+| Volume | Holds | Size |
+|---|---|---|
+| `toolbox_tts-models` | the OmniVoice voice model | about 3 GB |
+| `toolbox_whisper-models` | the Whisper models used so far | 148 MB to a few GB |
+| `toolbox_stirling-data` | Stirling-PDF's settings and its user database (two built-in accounts, no record of files) | under 1 MB |
+| `toolbox_tb-health` | the watcher's latest results | a few KB |
+
+Backing up a model volume only saves the download on a new install:
+
+```bash
+# Back up
+docker run --rm -v toolbox_tts-models:/v:ro -v "$PWD":/backup alpine tar czf /backup/tts-models.tgz -C /v .
+
+# Restore, on a new install, before its first start
+docker compose up --no-start --build
+docker run --rm -v toolbox_tts-models:/v -v "$PWD":/backup alpine tar xzf /backup/tts-models.tgz -C /v
+docker compose up -d
+```
+
+For Whisper models, use `whisper-models` in place of `tts-models`.
+`docker compose down -v` removes the containers and every volume, models included.
+
 ## Debugging without logs
 
-Container logs are off, and that is deliberate (see the README's privacy section).
+Container logs are off, and that is deliberate (see [Privacy details](#privacy-details)).
 The first step rarely needs them: `toolbox_status` and `docker logs tb-watch` say
 which tool fails and the error it gave on a fixed test input.
 
