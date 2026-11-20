@@ -135,8 +135,9 @@ services:
       - ORT_DISABLE_TELEMETRY=1
     volumes:
       - tb-health:/health:ro   # written by tb-watch; read to tell agents which tools are down
-    # The Camoufox browser is baked into the image at build time (gateway/Dockerfile).
-    # No volume for /root/.cache, and nothing is downloaded at run time.
+    # The Camoufox browser is baked into the image at build time (gateway/Dockerfile),
+    # and there is no volume for /root/.cache. At run time Firefox still fetches its
+    # media plugins, as stock Firefox does (README, privacy section).
     depends_on:
       - searxng
       - crawl4ai

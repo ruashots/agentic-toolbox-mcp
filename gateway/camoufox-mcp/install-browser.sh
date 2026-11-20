@@ -5,7 +5,8 @@
 #
 # Also installs the two files camoufox-js would otherwise download the first
 # time the browser starts: the uBlock Origin addon and the GeoIP database.
-# With all three in the image, nothing is installed or updated at run time.
+# With all three in the image, none of them is installed or updated at run time.
+# (Firefox still fetches its media plugins when it starts; see the README.)
 #
 # Inputs (Dockerfile ARGs): CAMOUFOX_VERSION, CAMOUFOX_RELEASE, CAMOUFOX_SHA256,
 # UBO_URL, UBO_SHA256. The browser zip is read from /vendor when it is there

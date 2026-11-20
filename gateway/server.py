@@ -649,7 +649,7 @@ def synthesize_speech(
 # so this is what we use whenever Crawl4AI gets caught by bot-detection (Cloudflare,
 # DataDome, etc) or we need true multi-step browser automation.
 # Tools surface as `mcp__toolbox__cf_<name>`. The browser is frozen into the image at
-# build time (see Dockerfile); nothing is downloaded at run time.
+# build time (see Dockerfile).
 mcp.mount(
     create_proxy({
         "mcpServers": {

@@ -213,8 +213,13 @@ What leaves your machine:
 - When SearXNG starts, it downloads the ClearURLs list of tracking parameters
   (rules1.clearurls.xyz) and uses it to strip them from result links.
 - A lookup of your public IP address (api.ipify.org, or a similar service if that
-  fails) each time the browser starts. Camoufox uses it to match the browser's time
-  zone and language to your IP.
+  fails) each time the stealth browser starts. Camoufox uses it to match the
+  browser's time zone and language to your IP.
+- Firefox's media plugins, which the stealth browser fetches the way stock Firefox
+  does, each time it starts: it asks Mozilla which versions are current
+  (aus5.mozilla.org), then downloads OpenH264 from Cisco (ciscobinary.openh264.org)
+  and Widevine from Google (update.googleapis.com and Google's download servers).
+  Camoufox leaves this on so that sites cannot tell it apart from stock Firefox.
 
 What websites and search engines record about the requests they receive is outside
 the toolbox's control. To debug a service you can turn its log on for a while; see
