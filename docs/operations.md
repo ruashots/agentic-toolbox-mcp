@@ -152,6 +152,7 @@ stayed green. Now these are pinned and checked:
 | SearXNG, Crawl4AI, Stirling-PDF images | `@sha256:` digests | `docker-compose.yml`, `crawl4ai/Dockerfile` |
 | Crawl4AI's browser settings: no web-security bypass, no calls of its own to Google, one browser context per call | build-time patch; the build fails if it does not apply, or if Playwright's own list of switched-off features grows | `crawl4ai/patch-crawl4ai.py` |
 | whisper.cpp | git commit | `whisper/Dockerfile` (`WHISPER_CPP_COMMIT`) |
+| Whisper models for transcription | one commit of Hugging Face's `ggerganov/whisper.cpp`; each file's sha256 checked after download, and a file that does not match is deleted | `whisper/models.py` |
 | OmniVoice | git commit | `tts/Dockerfile` (`OMNIVOICE_COMMIT`) |
 | Whisper and TTS Python packages, PyTorch included | full lock files | `whisper/requirements.lock`, `tts/requirements.lock` |
 | OmniVoice voice model, and the Whisper model it uses to transcribe cloning clips | Hugging Face revision; downloaded once, then loaded from the `tts-models` volume without contacting Hugging Face | `tts/server.py` (`MODEL_REVISION`, `ASR_REVISION`) |
@@ -167,10 +168,6 @@ Not pinned, on purpose or by nature:
 - **The GeoIP database** the browser uses to match its time zone and language to
   your public IP is downloaded at build time. Its only source keeps just its last
   two releases, so a checksum would break within days.
-- **Whisper models for transcription** download from Hugging Face the first time
-  each one is used, into the `whisper-models` volume, from the main branch of
-  `ggerganov/whisper.cpp`. They are not pinned to a revision, but a model that is
-  already in the volume is never downloaded again.
 - **The NodeSource setup script**, which adds Node's package source, is fetched at
   build time. The Node package it installs is pinned.
 
@@ -201,6 +198,10 @@ Per part:
   (Crawl4AI: in `crawl4ai/Dockerfile`; its privacy edits and `patch-crawl4ai.py`
   must still apply or the build fails).
 - **whisper.cpp, OmniVoice:** change the commit in the Dockerfile `ARG`.
+- **Whisper models:** take the new commit and each file's sha256 from the
+  `ggerganov/whisper.cpp` page on Hugging Face (Files and versions), and set
+  `REVISION` and the checksums in `whisper/models.py`. Models already in the
+  `whisper-models` volume are kept; remove one to have it downloaded again.
 - **The voice model** (or the model that transcribes cloning clips): take the new
   commit from the model's Hugging Face page (Files and versions, then History), set
   `MODEL_REVISION` (or `ASR_REVISION`) in `tts/server.py`, and rebuild `tts`. The next

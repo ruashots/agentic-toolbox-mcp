@@ -1,6 +1,7 @@
 """tb-whisper: whisper.cpp HTTP wrapper.
 
-Lazy-downloads models on first use, caches in /models volume. whisper.cpp is built
+Downloads each model the first time it is used, from one pinned commit, and keeps it
+in the /models volume only if its sha256 matches (models.py). whisper.cpp is built
 with Vulkan: it uses a GPU passed into the container (AMD, through Mesa RADV) and
 the CPU when there is none. No per-model config needed.
 """
@@ -9,47 +10,36 @@ import asyncio
 import json
 import subprocess
 import tempfile
-import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 import uvicorn
 
+from models import MODELS, ChecksumMismatch, download
+
 MODELS_DIR = Path("/models")
 MODELS_DIR.mkdir(exist_ok=True)
-
-# whisper.cpp ggml model URLs on HuggingFace
-MODEL_URLS = {
-    "tiny": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin",
-    "tiny.en": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.en.bin",
-    "base": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin",
-    "base.en": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.en.bin",
-    "small": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin",
-    "small.en": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin",
-    "medium": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin",
-    "medium.en": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.en.bin",
-    "large-v3": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3.bin",
-    "large-v3-turbo": "https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-large-v3-turbo.bin",
-}
 
 app = FastAPI()
 download_lock = asyncio.Lock()
 
 
 async def ensure_model(model: str) -> Path:
-    if model not in MODEL_URLS:
-        raise HTTPException(400, f"Unknown model '{model}'. Valid: {sorted(MODEL_URLS)}")
+    if model not in MODELS:
+        raise HTTPException(400, f"Unknown model '{model}'. Valid: {sorted(MODELS)}")
     path = MODELS_DIR / f"ggml-{model}.bin"
     if path.exists():
         return path
     async with download_lock:
         if path.exists():
             return path
-        url = MODEL_URLS[model]
-        tmp = path.with_suffix(".tmp")
         loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, lambda: urllib.request.urlretrieve(url, tmp))
-        tmp.rename(path)
+        try:
+            await loop.run_in_executor(None, lambda: download(model, path))
+        except ChecksumMismatch as exc:
+            raise HTTPException(502, f"could not get the {model} model: {exc}") from exc
+        except OSError as exc:
+            raise HTTPException(503, f"could not download the {model} model: {exc}") from exc
         return path
 
 
@@ -124,7 +114,7 @@ async def transcribe(
 def health():
     return {
         "status": "ok",
-        "models_available": sorted(MODEL_URLS),
+        "models_available": sorted(MODELS),
         "models_cached": sorted(p.stem.replace("ggml-", "") for p in MODELS_DIR.glob("ggml-*.bin")),
     }
 

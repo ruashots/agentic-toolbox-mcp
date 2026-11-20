@@ -214,9 +214,10 @@ What leaves your machine:
 - Model downloads from Hugging Face, each only the first time it is needed: a
   Whisper model the first time it is used, the voice model on the first speech
   request, and, if you clone a voice without the clip's transcript, a Whisper model
-  (about 1.6 GB) for the speech service. The speech models are pinned to one
-  version, and once they are downloaded the speech service starts without
-  contacting Hugging Face.
+  (about 1.6 GB) for the speech service. Every model is pinned to one version, and
+  a Whisper model whose checksum does not match is deleted instead of used. Once
+  the speech models are downloaded, the speech service starts without contacting
+  Hugging Face.
 - When SearXNG starts, it downloads the ClearURLs list of tracking parameters
   (rules1.clearurls.xyz) and uses it to strip them from result links.
 - A lookup of your public IP address (api.ipify.org, or a similar service if that
