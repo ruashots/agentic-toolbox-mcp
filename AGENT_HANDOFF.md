@@ -26,8 +26,9 @@ Then act on the answer.
 ### (1) Nothing is set up
 
 You are going to install the toolbox. That is a real commitment on the user's
-machine: a first build that downloads about 5.5 GB, about 48 GB of images, build
-cache and models on disk afterwards, and seven containers that keep running. Confirm before you
+machine: a first build that downloads about 5.5 GB, 37 to 50 GB of images, build
+cache and models on disk afterwards (it depends on how Docker stores images), and
+seven containers that keep running. Confirm before you
 start.
 
 Ask the user: *"Should it run on this machine, or on another one (a home server, a

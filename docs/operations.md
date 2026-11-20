@@ -123,8 +123,8 @@ asyncio.run(main())
 
 # Free the disk space the build cache takes. It asks first. It removes ALL of
 # Docker's build cache on this machine, other projects' included, and the next
-# rebuild of any image starts from scratch. On a fresh install Docker reported
-# 16 GB and the disk got back about 7 GB (the images share part of that data).
+# rebuild of any image starts from scratch. On fresh installs Docker reported 17 to
+# 18 GB, and the disk got back 8 to 13 GB (the images share part of that data).
 docker builder prune -a
 ```
 
