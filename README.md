@@ -164,6 +164,12 @@ What that means in practice:
   not.
 - `convert_document`, `pdf_extract_text` and `transcribe_audio` also accept file
   paths, and read them inside the gateway container.
+- Web pages cannot use the toolbox from a browser. A browser marks every request a
+  page makes with the page's origin, and the endpoint refuses those with
+  `403 Forbidden Origin`. MCP clients such as Claude Code send no origin and are not
+  affected. To use a browser-based MCP client you trust, add its origin to the
+  gateway's `environment` in `docker-compose.yml`, for example
+  `- FASTMCP_HTTP_ALLOWED_ORIGINS=["http://localhost:6274"]`.
 - Port 8085 serves Stirling-PDF's own web page, with its login turned off. The
   toolbox does not need it: delete the two `ports` lines under `stirling-pdf` in
   `docker-compose.yml` to close it.

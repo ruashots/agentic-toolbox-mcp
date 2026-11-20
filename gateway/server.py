@@ -18,6 +18,7 @@ import subprocess
 import tempfile
 from pathlib import Path
 
+import fastmcp
 import httpx
 from fastmcp import FastMCP
 from fastmcp.server import create_proxy
@@ -667,6 +668,19 @@ mcp.mount(
 )
 
 
+def http_guard() -> dict:
+    """Refuse requests from web pages: those carry an Origin header, and MCP clients
+    such as Claude Code send none. A page in a browser on your network, including one
+    that renamed itself to this machine's address (DNS rebinding), gets 403 Forbidden
+    Origin unless its origin is listed in FASTMCP_HTTP_ALLOWED_ORIGINS (a JSON list,
+    for a browser-based MCP client you trust). Requests without an Origin header are
+    not affected. FastMCP 3.4.4 ships this check switched off."""
+    return {
+        "host_origin_protection": "auto",
+        "allowed_origins": list(fastmcp.settings.http_allowed_origins or []),
+    }
+
+
 async def _init_and_run():
     """Eagerly populate proxy mounts so all child tools are registered before the
     HTTP server accepts connections.
@@ -686,7 +700,7 @@ async def _init_and_run():
         for t in tools:
             print(f"  - {t.name}", flush=True)
 
-    await mcp.run_async(transport="http", host="0.0.0.0", port=8000, path="/mcp")
+    await mcp.run_async(transport="http", host="0.0.0.0", port=8000, path="/mcp", **http_guard())
 
 
 if __name__ == "__main__":
