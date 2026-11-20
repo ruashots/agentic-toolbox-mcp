@@ -36,6 +36,15 @@ tb-watch ── MCP over HTTP ──▶ tb-gateway   one real job per tool, on a
 `convert_document`, `extract_video` and `download_media` run inside the gateway
 itself (Markitdown and yt-dlp).
 
+Two ports are published on the host:
+
+- **8000**, the MCP endpoint, open to your network (agents on other machines connect
+  here). There is no login; see the README's security section.
+- **8085**, Stirling-PDF's own web page, with its login off, also open to your
+  network. The gateway reaches Stirling over the internal Docker network, so the
+  toolbox works the same with this port closed: delete the two `ports` lines under
+  `stirling-pdf` in `docker-compose.yml` to close it.
+
 Three patterns hold it together:
 
 - **Other MCP servers are mounted, not rewritten.** The browser tools come from
@@ -166,8 +175,11 @@ Not pinned, on purpose or by nature:
 - **System packages** inside each image come from its Debian or Ubuntu release at
   build time, so a rebuild gets that release's security updates.
 - **The GeoIP database** the browser uses to match its time zone and language to
-  your public IP is downloaded at build time. Its only source keeps just its last
-  two releases, so a checksum would break within days.
+  your public IP is downloaded at build time from a third party's mirror of MaxMind's
+  GeoLite2 (the one camoufox-js itself uses), and only checked to contain MaxMind's
+  marker. That mirror keeps just its last two releases, so a checksum would break
+  within days. It is data, not code, read by camoufox-js to pick a time zone and
+  language.
 
 ## Updating a pinned part
 
