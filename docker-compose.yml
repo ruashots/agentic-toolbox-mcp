@@ -32,15 +32,22 @@ services:
       - FORCE_OWNERSHIP=false
 
   crawl4ai:
-    # Frozen upstream image plus three edits that stop it keeping pages and logs; see crawl4ai/Dockerfile.
+    # Frozen upstream image with its record-keeping off and its browser's protections
+    # back on; see crawl4ai/Dockerfile and crawl4ai/patch-crawl4ai.py.
     build: ./crawl4ai
     image: toolbox-crawl4ai
     container_name: tb-crawl4ai
     restart: unless-stopped
     <<: *private
+    # Nothing the browser does can be saved to disk.
+    read_only: true
     tmpfs:
       - /tmp:size=1g
       - /home/appuser/.crawl4ai:uid=999,gid=999,mode=0755,size=128m
+      - /home/appuser/.gunicorn:uid=999,gid=999,mode=0700,size=64k
+      # Chrome will not start without a folder for crash reports. This one is too
+      # small to hold a report, so a browser crash leaves none.
+      - /home/appuser/.config:uid=999,gid=999,mode=0700,size=128k
     networks: [toolbox]
     shm_size: 1gb
     environment:

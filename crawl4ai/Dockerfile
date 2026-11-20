@@ -1,4 +1,5 @@
-# tb-crawl4ai: the frozen Crawl4AI image with its record-keeping switched off.
+# tb-crawl4ai: the frozen Crawl4AI image with its record-keeping switched off and
+# its browser's protections back on (patch-crawl4ai.py).
 #
 # Privacy rule for the whole toolbox: keep no record of what agents asked for or
 # got back. Stock Crawl4AI keeps three:
@@ -23,6 +24,7 @@ RUN set -eu; \
     grep -q 'command=/usr/bin/redis-server --loglevel notice' /app/supervisord.conf; \
     sed -i 's|command=/usr/bin/redis-server --loglevel notice|command=/usr/bin/redis-server --loglevel warning --save "" --appendonly no|' /app/supervisord.conf; \
     grep -q -- '--save ""' /app/supervisord.conf; \
-    find $P -name '*.pyc' -path '*crawl4ai*' -delete; \
-    rm -f /app/__pycache__/api.*.pyc
+    find $P -name '*.pyc' -path '*crawl4ai*' -delete
+COPY patch-crawl4ai.py /tmp/patch-crawl4ai.py
+RUN python /tmp/patch-crawl4ai.py && rm -f /tmp/patch-crawl4ai.py && rm -rf /app/__pycache__
 USER appuser

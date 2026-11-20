@@ -150,6 +150,7 @@ stayed green. Now these are pinned and checked:
 | Node | exact package `22.23.3-1nodesource1` | `gateway/Dockerfile` |
 | Base images | `@sha256:` digests | every Dockerfile |
 | SearXNG, Crawl4AI, Stirling-PDF images | `@sha256:` digests | `docker-compose.yml`, `crawl4ai/Dockerfile` |
+| Crawl4AI's browser settings: no web-security bypass, no calls of its own to Google, one browser context per call | build-time patch; the build fails if it does not apply, or if Playwright's own list of switched-off features grows | `crawl4ai/patch-crawl4ai.py` |
 | whisper.cpp | git commit | `whisper/Dockerfile` (`WHISPER_CPP_COMMIT`) |
 | OmniVoice | git commit | `tts/Dockerfile` (`OMNIVOICE_COMMIT`) |
 | Whisper and TTS Python packages, PyTorch included | full lock files | `whisper/requirements.lock`, `tts/requirements.lock` |
@@ -197,8 +198,8 @@ Per part:
   `docker inspect --format '{{index .RepoDigests 0}}' <image>:<tag>`, and replace the
   digest in the Dockerfile.
 - **SearXNG, Crawl4AI, Stirling-PDF:** the same, in `docker-compose.yml`
-  (Crawl4AI: in `crawl4ai/Dockerfile`; its three privacy edits must still apply or
-  the build fails).
+  (Crawl4AI: in `crawl4ai/Dockerfile`; its privacy edits and `patch-crawl4ai.py`
+  must still apply or the build fails).
 - **whisper.cpp, OmniVoice:** change the commit in the Dockerfile `ARG`.
 - **The voice model** (or the model that transcribes cloning clips): take the new
   commit from the model's Hugging Face page (Files and versions, then History), set
@@ -308,6 +309,20 @@ reboot.
     which is not: 7 of 10 common sites failed this way. `patch-dns-sinkhole.py`
     keeps blocking them and lets the page load. LAN and localhost addresses are
     still refused.
+11. **Crawl4AI's browser shipped with its protections off.** Its default config
+    starts Chromium with `--disable-web-security`, which lets a script on any page
+    read any other site's answers, including services on your network.
+    `patch-crawl4ai.py` removes it and `--allow-insecure-localhost`, and keeps
+    `--ignore-certificate-errors` for self-signed certificates on home networks.
+12. **Chromium keeps only the last `--disable-features`.** Playwright switches off a
+    list of features, including some that call Google, and Crawl4AI then passes a
+    shorter list of its own, which replaced Playwright's. Even with both, the
+    browser asked accounts.google.com, www.google.com and clients2.google.com at
+    start, registered for push messages at android.clients.google.com, and sent
+    the form fingerprints of pages it read to content-autofill.googleapis.com.
+    `patch-crawl4ai.py` passes one list that holds everything, points Chrome's own
+    Google services at an address where nothing answers, and fails the build if a
+    Playwright update adds a feature the list lacks.
 
 ## Making the README images
 

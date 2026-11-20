@@ -21,3 +21,17 @@ def test_no_service_can_leave_a_core_dump(name):
     # kernel hands the crash to that collector, which ignores 0 and saves the dump.
     # A limit of 1 byte makes the kernel drop the dump itself.
     assert _core_limits(SERVICES[name]) == (1, 1)
+
+
+def test_fetch_pages_browser_can_save_nothing_to_disk():
+    crawl4ai = SERVICES["crawl4ai"]
+    assert crawl4ai["read_only"] is True
+    # Chrome needs a crash-report folder to start; it must be too small for a report
+    # (a renderer's report measured about 400 KB).
+    folders = {entry.split(":", 1)[0]: entry for entry in crawl4ai["tmpfs"]}
+    assert "size=128k" in folders["/home/appuser/.config"]
+
+
+def test_fetch_pages_browser_shares_the_toolbox_network():
+    # It must reach the addresses agents give it, on your network too.
+    assert SERVICES["crawl4ai"]["networks"] == ["toolbox"]

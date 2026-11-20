@@ -162,6 +162,10 @@ What that means in practice:
   private and local addresses; `fetch_page`, `convert_document`, `pdf_extract_text`,
   `extract_video`, `download_media`, `transcribe_audio` and `synthesize_speech` do
   not.
+- A page that `fetch_page` opens cannot read other sites through it. Its browser
+  keeps the normal rule between websites, so a script on a fetched page cannot read
+  your router's page or the toolbox's own services and send them on. `fetch_page`
+  itself still opens any address it is given, on your network or not.
 - `convert_document`, `pdf_extract_text` and `transcribe_audio` also accept file
   paths, and read them inside the gateway container.
 - Web pages cannot use the toolbox from a browser. A browser marks every request a
@@ -184,9 +188,11 @@ The toolbox keeps no record of what agents ask for or get back, on disk or in lo
   test jobs, never of agent requests.
 - Downloads, uploads, converted files, audio, and the browser's profiles and caches
   are kept in RAM and disappear when a container restarts. No core dumps or Java heap
-  dumps are written.
+  dumps are written, and `fetch_page`'s browser keeps no crash reports.
 - The browser starts fresh for every call. A multi-step browser session keeps its
-  cookies until it is closed, or after 10 minutes without a call.
+  cookies until it is closed, or after 10 minutes without a call. `fetch_page` also
+  gives every call a fresh browser context, with no cookies or storage from other
+  calls.
 - Crawl4AI's page cache, log files and Redis snapshots, Stirling-PDF's audit trail
   and analytics, and the access logs of the speech services are all off.
 - FastMCP's update check and onnxruntime's usage telemetry are off too.
