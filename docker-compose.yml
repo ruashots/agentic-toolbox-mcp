@@ -7,7 +7,8 @@ name: toolbox
 #    with 0, Linux still hands a crash to the host's crash collector when it has one
 #    (WSL 2 always does, and many distributions do), and that saves the dump anyway.
 #    With 1, the kernel drops the dump before any collector sees it.
-#  - scratch space (/tmp and other per-request dirs) is RAM-only tmpfs, never disk
+#  - scratch space (/tmp and other per-request dirs) is RAM-only tmpfs: the toolbox never
+#    writes it to disk, though the host's swap can (README, privacy section)
 x-private: &private
   logging:
     driver: none

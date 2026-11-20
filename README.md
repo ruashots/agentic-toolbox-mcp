@@ -96,6 +96,11 @@ an agent through connecting itself.
   done, `toolbox_status` can show `synthesize_speech` as down.
 - Once running, the toolbox uses about 4 to 5 GB of RAM, plus about 2.5 GB while
   `large-v3-turbo` transcribes (the biggest models take more).
+- Files that agents send or ask for are kept on RAM disks, which use memory only
+  while a file is on them. They can grow, though: up to 4 GB in the gateway (where
+  `download_media` puts the media files it returns) and about 11 GB across all the
+  containers, more than the 8 GB the toolbox needs to run. On a machine that small,
+  a very large download can run it out of memory.
 
 <details>
 <summary><b>Transcription on an AMD GPU</b></summary>
@@ -188,11 +193,13 @@ The toolbox keeps no record of what agents ask for or get back, on disk or in lo
   test jobs, never of agent requests.
 - Downloads, uploads, converted files, audio, and the browser's profiles and caches
   are kept in RAM and disappear when a container restarts. No core dumps or Java heap
-  dumps are written, and `fetch_page`'s browser keeps no crash reports.
-- The browser starts fresh for every call. A multi-step browser session keeps its
-  cookies until it is closed, or after 10 minutes without a call. `fetch_page` also
-  gives every call a fresh browser context, with no cookies or storage from other
-  calls.
+  dumps are written, and `fetch_page`'s browser keeps no crash reports. One limit:
+  when the machine runs short of memory, Linux can move what is in RAM, these files
+  included, to its swap area on disk. To keep them off disk entirely, run the toolbox
+  on a machine without swap, or with encrypted swap.
+- Both browsers start empty for every call: `fetch_page` and the `cf_*` tools. A
+  multi-step browser session keeps its cookies until it is closed, or after 10
+  minutes without a call.
 - Crawl4AI's page cache, log files and Redis snapshots, Stirling-PDF's audit trail
   and analytics, and the access logs of the speech services are all off.
 - FastMCP's update check and onnxruntime's usage telemetry are off too.
