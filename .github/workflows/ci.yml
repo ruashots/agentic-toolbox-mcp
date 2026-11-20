@@ -29,7 +29,7 @@ jobs:
         run: pip install -r gateway/requirements.lock -r tests/requirements.txt
 
       - name: Lint (errors only)
-        run: ruff check --select F,E9 gateway whisper tts tests
+        run: ruff check --select F,E9 gateway whisper tts tests crawl4ai scripts
 
       - name: Unit tests
         run: pytest -q tests

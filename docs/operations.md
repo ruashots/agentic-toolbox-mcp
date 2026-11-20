@@ -146,7 +146,7 @@ stayed green. Now these are pinned and checked:
 | Browser driver: camoufox-mcp-server 2.0.7, camoufox-js 0.10.2, playwright-core 1.51.1 and everything under them | pnpm lockfile, `--frozen-lockfile` | `gateway/camoufox-mcp/` |
 | camoufox-js fix for browser 156 | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-camoufox-js.sh` |
 | Browser fix for DNS-blocked trackers | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-dns-sinkhole.py` |
-| Gateway Python packages | full lock file | `gateway/requirements.lock` |
+| Gateway Python packages | full lock file, each package with the sha256 of its files; the build refuses any other file | `gateway/requirements.lock` |
 | Node 22.23.3 and pnpm 9.15.9 | the nodejs.org and npm registry files, sha256 and sha512 checked at build | `gateway/Dockerfile` (`NODE_*`, `PNPM_SHA512`) |
 | Base images | `@sha256:` digests | every Dockerfile |
 | SearXNG, Crawl4AI, Stirling-PDF images | `@sha256:` digests | `docker-compose.yml`, `crawl4ai/Dockerfile` |
@@ -154,7 +154,7 @@ stayed green. Now these are pinned and checked:
 | whisper.cpp | git commit | `whisper/Dockerfile` (`WHISPER_CPP_COMMIT`) |
 | Whisper models for transcription | one commit of Hugging Face's `ggerganov/whisper.cpp`; each file's sha256 checked after download, and a file that does not match is deleted | `whisper/models.py` |
 | OmniVoice | git commit | `tts/Dockerfile` (`OMNIVOICE_COMMIT`) |
-| Whisper and TTS Python packages, PyTorch included | full lock files | `whisper/requirements.lock`, `tts/requirements.lock` |
+| Whisper and TTS Python packages, PyTorch included | full lock files with sha256, as above; PyTorch comes only from the PyTorch CPU index and everything else only from PyPI | `whisper/requirements.lock`, `tts/requirements.lock`, `tts/requirements-torch.lock` |
 | OmniVoice voice model, and the Whisper model it uses to transcribe cloning clips | Hugging Face revision; downloaded once, then loaded from the `tts-models` volume without contacting Hugging Face | `tts/server.py` (`MODEL_REVISION`, `ASR_REVISION`) |
 
 The gateway build also launches the browser and renders a page
@@ -184,11 +184,14 @@ Per part:
 
 - **yt-dlp** is the one most likely to need it, because YouTube changes break old
   versions (the watcher reports it). Set `yt-dlp==<version>` in
-  `gateway/requirements.lock` and rebuild the gateway.
+  `gateway/requirements.lock`, run `python3 scripts/hash_lock.py
+  gateway/requirements.lock`, and rebuild the gateway.
 - **A Python package:** edit its line in the right `requirements.lock`. For a bigger
   change, install in a scratch container, test, then `pip freeze > requirements.lock`.
   For the gateway, delete the `SpeechRecognition` line afterwards: with it present,
-  `convert_document` sends audio files to Google's speech service.
+  `convert_document` sends audio files to Google's speech service. Then write the
+  hashes: `python3 scripts/hash_lock.py <the lock file>` looks up the sha256 of every
+  file of each pinned version. The build refuses a lock line without hashes.
 - **A base image:** pull the new tag, read its digest with
   `docker inspect --format '{{index .RepoDigests 0}}' <image>:<tag>`, and replace the
   digest in the Dockerfile.

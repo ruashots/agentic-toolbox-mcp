@@ -18,12 +18,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # CPU-only torch wheels: ~200 MB instead of the ~2.5 GB CUDA build, and the CUDA
-# one would be dead weight here anyway.
-# requirements.lock holds every package at the exact version that was verified,
-# torch/torchaudio included (from the CPU wheel index).
-COPY requirements.lock /app/
-RUN pip install --no-cache-dir --extra-index-url https://download.pytorch.org/whl/cpu \
-        -r requirements.lock
+# one would be dead weight here anyway. torch and torchaudio come only from the
+# PyTorch CPU index (requirements-torch.lock), everything else only from PyPI
+# (requirements.lock), so no package can be taken from the other index. Every file
+# is checked against the sha256 listed for it.
+COPY requirements-torch.lock requirements.lock /app/
+RUN pip install --no-cache-dir --require-hashes --no-deps \
+        --index-url https://download.pytorch.org/whl/cpu -r requirements-torch.lock \
+    && pip install --no-cache-dir --require-hashes -r requirements.lock
 
 ARG OMNIVOICE_COMMIT=468e927ba3716cd8dd86421148dfb3046e9f9d7b
 RUN git clone https://github.com/k2-fsa/OmniVoice.git /src/OmniVoice \

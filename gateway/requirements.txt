@@ -1,4 +1,5 @@
-# Direct dependencies, for reading only. The build installs requirements.lock (exact versions).
+# Direct dependencies, for reading only. The build installs requirements.lock (exact
+# versions, each with its sha256).
 fastmcp==3.4.4
 mcp==1.28.1
 httpx>=0.27

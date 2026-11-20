@@ -5,7 +5,8 @@
 # allowed to fetch "the newest" version at build time or at run time:
 #   - base image pinned by digest
 #   - Node: the nodejs.org build of one version, checked by sha256; pnpm the same way
-#   - Python deps installed from requirements.lock (exact versions, all transitive)
+#   - Python deps installed from requirements.lock (exact versions, all transitive,
+#     each file checked by sha256)
 #   - the browser tool server installed from camoufox-mcp/pnpm-lock.yaml
 #   - the Camoufox browser itself: one exact release, checked by sha256
 # Updating any of these is a deliberate act: see docs/operations.md.
@@ -40,7 +41,7 @@ RUN curl -fsSL -o /tmp/node.tar.gz "https://nodejs.org/dist/v${NODE_VERSION}/nod
 WORKDIR /app
 
 COPY requirements.lock .
-RUN pip install --no-cache-dir -r requirements.lock
+RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 
 # Browser tool server (camoufox-mcp-server 2.0.7 + camoufox-js 0.10.2 + playwright-core 1.51.1),
 # installed from the lockfile so no transitive dependency can float.

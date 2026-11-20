@@ -43,7 +43,7 @@ WORKDIR /app
 COPY --from=builder /src/build/bin/whisper-cli /usr/local/bin/whisper-cli
 
 COPY requirements.lock server.py models.py /app/
-RUN pip install --no-cache-dir --break-system-packages -r requirements.lock
+RUN pip install --no-cache-dir --break-system-packages --require-hashes -r requirements.lock
 
 # Models cached in /models (volume mount). First call to an uncached model downloads it.
 VOLUME ["/models"]
