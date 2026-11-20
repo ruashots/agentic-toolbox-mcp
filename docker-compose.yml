@@ -3,13 +3,16 @@ name: toolbox
 # PRIVACY RULE: the toolbox keeps no record of what agents asked for or got back.
 #  - container logs are off (driver "none"); to debug, use docker-compose.debug-logs.yml
 #    for as short a time as possible (see docs/operations.md, "Debugging without logs")
-#  - no core dumps (they are copies of process memory)
+#  - no core dumps (they are copies of process memory). The limit is 1 byte, not 0:
+#    with 0, Linux still hands a crash to the host's crash collector when it has one
+#    (WSL 2 always does, and many distributions do), and that saves the dump anyway.
+#    With 1, the kernel drops the dump before any collector sees it.
 #  - scratch space (/tmp and other per-request dirs) is RAM-only tmpfs, never disk
 x-private: &private
   logging:
     driver: none
   ulimits:
-    core: 0
+    core: 1
 
 services:
   searxng:
@@ -150,7 +153,7 @@ services:
         max-size: 1m
         max-file: "2"
     ulimits:
-      core: 0
+      core: 1   # see PRIVACY RULE at the top
     tmpfs:
       - /tmp:size=256m
     networks: [toolbox]
