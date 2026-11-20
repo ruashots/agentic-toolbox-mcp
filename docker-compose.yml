@@ -27,8 +27,6 @@ services:
       # Without this the image chowns ./searxng in your clone to its own user,
       # and a later `git pull` cannot update searxng/settings.yml.
       - FORCE_OWNERSHIP=false
-      - UWSGI_WORKERS=4
-      - UWSGI_THREADS=4
 
   crawl4ai:
     # Frozen upstream image plus three edits that stop it keeping pages and logs; see crawl4ai/Dockerfile.
