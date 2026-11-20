@@ -36,8 +36,8 @@ Docker Compose command and needs no accounts or API keys.
 | Search the web | `search_web` | [SearXNG](https://github.com/searxng/searxng) |
 | Read a page, JavaScript included | `fetch_page` | [Crawl4AI](https://github.com/unclecode/crawl4ai) |
 | Get past bot protection, click, fill forms, take screenshots | `cf_browse` and 16 more `cf_*` tools | [Camoufox](https://github.com/daijro/camoufox), a stealth Firefox, through [camoufox-mcp](https://github.com/whit3rabbit/camoufox-mcp) |
-| Turn a PDF, Word, PowerPoint, Excel, HTML or EPUB file into markdown | `convert_document` | [MarkItDown](https://github.com/microsoft/markitdown) |
-| Get the plain text out of a PDF | `pdf_extract_text` | [Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF) |
+| Turn a Word, PowerPoint, Excel, HTML or EPUB file into markdown, headings and tables included | `convert_document` | [MarkItDown](https://github.com/microsoft/markitdown) |
+| Get the text out of a PDF, with table rows kept together | `pdf_extract_text` | [Stirling-PDF](https://github.com/Stirling-Tools/Stirling-PDF) |
 | Get a video's title, description and captions | `extract_video` | [yt-dlp](https://github.com/yt-dlp/yt-dlp) |
 | Download the audio or video file itself | `download_media` | yt-dlp |
 | Transcribe speech | `transcribe_audio` | [whisper.cpp](https://github.com/ggml-org/whisper.cpp), on the CPU or an AMD GPU |

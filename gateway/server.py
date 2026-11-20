@@ -323,9 +323,11 @@ def fetch_page(url: str, render_js: bool = True) -> str:
 
 @mcp.tool
 def convert_document(source: str) -> str:
-    """Convert a document (PDF, Word .docx, PowerPoint .pptx, Excel .xlsx/.xls, HTML, CSV, EPUB) to markdown.
+    """Convert a document (Word .docx, PowerPoint .pptx, Excel .xlsx/.xls, HTML, CSV, EPUB) to markdown.
 
-    There is no OCR: text inside images and scanned pages is not read. It does not
+    Headings and tables come out as markdown. It also reads PDFs, but only as plain text:
+    no headings, and table cells can come loose from their rows; for PDFs use
+    pdf_extract_text, which keeps each table row on one line. There is no OCR: text inside images and scanned pages is not read. It does not
     transcribe audio or video either (use transcribe_audio for that). When nothing
     readable is found, it raises an error instead of returning an empty string.
 
@@ -448,7 +450,7 @@ def download_media(url: str, kind: str = "audio", quality: str = "best", max_mb:
 
 @mcp.tool
 def pdf_extract_text(source: str) -> str:
-    """Extract plain text from a PDF using Stirling-PDF's text extractor.
+    """Extract the text of a PDF in reading order, each table row kept on one line (Stirling-PDF).
 
     Args:
         source: URL or local path to a PDF

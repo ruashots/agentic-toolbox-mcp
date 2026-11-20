@@ -101,8 +101,8 @@ Once `ping` works, you have every tool. Carry on.
 | Drive a page through several steps (click, fill, navigate) | `cf_browse_session_start`, then `cf_browse_session_navigate` / `_action` / `_snapshot`, then `cf_browse_session_close` | A browser session that keeps its state between calls. For "click load more, then scrape" or login flows. |
 | Take a screenshot of a page | `cf_browse_screenshot` | Returns an image. Pair it with your own vision. |
 | Get one kind of thing from a page | `cf_browse_links` / `cf_browse_forms` / `cf_browse_outline` / `cf_browse_find` | Cheaper than the full content when you only need links, forms, headings or a text match. |
-| Convert a document to markdown | `convert_document` | URL or file path. PDF, Word (.docx), PowerPoint (.pptx), Excel (.xlsx, .xls), HTML, CSV, EPUB. **For structured markdown from a PDF, use this.** No OCR: images and scanned pages give an error that says no text was found. |
-| Get plain text from a PDF | `pdf_extract_text` | Cleaner word spacing than `convert_document` on PDFs with columns. Use it for "just give me the readable text". |
+| Convert a document to markdown | `convert_document` | URL or file path. Word (.docx), PowerPoint (.pptx), Excel (.xlsx, .xls), HTML, CSV, EPUB: headings and tables come out as markdown. It also reads PDFs, but only as plain text: no headings, and table cells can come loose from their rows. No OCR: images and scanned pages give an error that says no text was found. |
+| Read a PDF | `pdf_extract_text` | Plain text in reading order, with each table row kept on one line. **For PDFs, use this.** |
 | Get metadata and captions for a video | `extract_video` | yt-dlp, works with YouTube and many other sites. Returns title, uploader, duration, description and the English auto-captions when they exist. **Try this first** before transcribing: many videos have free captions. |
 | Get the audio or video **file** itself | `download_media` | Takes the best stream as is, with no re-encoding, and returns it as base64 (`content_b64`): decode and save it. `kind="audio"` or `"video"`. Files over `max_mb` (default 25) are refused. Use it when you need the media, not its text. |
 | Transcribe audio or video that has no captions | `transcribe_audio` | Local Whisper, on the toolbox's GPU if it has one, otherwise on its CPU. See **Model selection**: bigger is not always better. |
@@ -144,15 +144,14 @@ waiting 30 seconds.
 
 ### `convert_document` or `pdf_extract_text`
 
-Both read PDFs, with different strengths:
+For a PDF, use `pdf_extract_text`. Both give plain text from PDFs, without markdown
+headings, but they differ on tables. On a small table, `pdf_extract_text` gave
+`North 120 9.50 / South 95 8.75`, one row per line, while `convert_document` split
+the last row's price from its row; on a 12-row table it moved the whole price column
+below the table.
 
-- `convert_document` (MarkItDown) keeps structure: tables become markdown tables and
-  headings stay headings. **Quirk:** PDFs with many columns sometimes lose the spaces
-  between words ("AttentionIsAllYouNeed").
-- `pdf_extract_text` (Stirling-PDF) keeps clean word spacing and no structure. Plain
-  text only.
-
-Pick by what you need: structure, `convert_document`; readable text, `pdf_extract_text`.
+Use `convert_document` for everything else (Word, PowerPoint, Excel, HTML, EPUB):
+there it keeps headings and turns tables into markdown tables.
 
 ### `transcribe_audio` model selection
 
@@ -235,12 +234,11 @@ carries over.
 ### Read a PDF the user shared
 
 ```
-For structure (tables, headings, references):
-  convert_document(source)
-
-For "just read it to me" plain text:
-  pdf_extract_text(source)
+pdf_extract_text(source)      # text in reading order, table rows kept together
 ```
+
+If the user shared it as Word, PowerPoint or HTML instead, `convert_document(source)`
+keeps its headings and tables as markdown.
 
 ### Get data from a bot-protected site
 
