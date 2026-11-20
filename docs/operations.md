@@ -155,7 +155,7 @@ stayed green. Now these are pinned and checked:
 | Browser driver: camoufox-mcp-server 2.0.7, camoufox-js 0.10.2, playwright-core 1.51.1 and everything under them | pnpm lockfile, `--frozen-lockfile` | `gateway/camoufox-mcp/` |
 | camoufox-js fix for browser 156 | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-camoufox-js.sh` |
 | Browser fix for DNS-blocked trackers | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-dns-sinkhole.py` |
-| Browser access to your network: addresses an agent gives it, and LAN pages reaching the LAN; never internet pages reaching the LAN | build-time patch, then `lan-selftest.mjs` runs the real guard against 12 made-up requests; the build fails if any answer is wrong | `gateway/camoufox-mcp/patch-lan-access.py`, `gateway/camoufox-mcp/lan-selftest.mjs` |
+| Browser access to your network: addresses an agent gives it, and LAN pages reaching the LAN; never internet pages reaching the LAN | build-time patch, then `lan-selftest.mjs` runs the real guard against 14 made-up requests; the build fails if any answer is wrong | `gateway/camoufox-mcp/patch-lan-access.py`, `gateway/camoufox-mcp/lan-selftest.mjs` |
 | Gateway Python packages | full lock file, each package with the sha256 of its files; the build refuses any other file | `gateway/requirements.lock` |
 | Node 22.23.3 and pnpm 9.15.9 | the nodejs.org and npm registry files, sha256 and sha512 checked at build | `gateway/Dockerfile` (`NODE_*`, `PNPM_SHA512`) |
 | Base images | `@sha256:` digests | every Dockerfile |
@@ -354,7 +354,10 @@ reboot.
     from internet pages to your network stay blocked: sub-requests, frames,
     redirects and navigations. The guard decides from the page that made the
     request, so a site cannot get in by later pointing its own name at a LAN
-    address. `lan-selftest.mjs` checks all of this at build time.
+    address. The same patch narrows one upstream rule that refused all of
+    192.0.0.0/16, which blocked real sites such as iana.org and icann.org; only the
+    reserved 192.0.0.0/24 and 192.0.2.0/24 stay refused. `lan-selftest.mjs` checks
+    all of this at build time.
 
 ## Making the README images
 

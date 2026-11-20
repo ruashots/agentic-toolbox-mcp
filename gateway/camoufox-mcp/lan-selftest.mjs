@@ -51,6 +51,8 @@ const cases = [
     ["an internet page loads an internet file", request("http://93.184.215.15/x.js", { inFrame: frame(INTERNET) }), [], "sent"],
     ["a LAN page asks for loopback", request("http://127.0.0.1:8000/mcp", { inFrame: frame(LAN) }), [LAN], "blocked"],
     ["a LAN page asks for link-local", request("http://169.254.169.254/", { inFrame: frame(LAN) }), [LAN], "blocked"],
+    ["an internet page links to iana.org (192.0.43.8)", request("http://192.0.43.8/", { navigation: true, inFrame: frame(INTERNET) }), [], "sent"],
+    ["a page asks for the 192.0.2.0/24 documentation range", request("http://192.0.2.10/", { inFrame: frame(INTERNET) }), [], "blocked"],
 ];
 
 let failed = 0;

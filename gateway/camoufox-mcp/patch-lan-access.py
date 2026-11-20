@@ -14,6 +14,9 @@ After this patch:
   redirect or navigation.
 - Loopback (127.0.0.0/8, ::1, localhost), 0.0.0.0, link-local, multicast and the
   other reserved ranges stay refused for everyone.
+- One upstream range was too wide: it refused all of 192.0.0.0/16, which holds real
+  sites such as iana.org and icann.org (192.0.32.0/20). Only 192.0.0.0/24 and the
+  192.0.2.0/24 documentation range are reserved, so only those stay refused.
 
 Every other guard rule is unchanged. The build fails if the upstream code is not
 exactly what this patch expects.
@@ -36,6 +39,9 @@ d = base[0]
 
 # --- policy.js: an allowLan option on the URL checks --------------------------------
 policy = f"{d}/policy.js"
+patch(policy,
+      "        || (first === 192 && second === 0)\n",
+      "        || (first === 192 && second === 0 && (third === 0 || third === 2))\n")
 patch(policy, "export function parseAndValidateTargetUrl(rawUrl) {",
       "export function parseAndValidateTargetUrl(rawUrl, options = {}) {")
 patch(policy,
