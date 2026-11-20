@@ -340,6 +340,13 @@ reboot.
     `patch-crawl4ai.py` passes one list that holds everything, points Chrome's own
     Google services at an address where nothing answers, and fails the build if a
     Playwright update adds a feature the list lacks.
+13. **Crawl4AI read web apps before they had drawn anything.** A page that builds
+    itself with JavaScript, such as Stirling-PDF's own web page, has almost no text
+    when it first loads. Crawl4AI's anti-bot check then called it a block page
+    (`Structural: script_heavy_shell`) and `fetch_page` failed. `patch-crawl4ai.py`
+    reads such a page once more, waiting up to 10 seconds for it to show text.
+    Waiting for the network to go quiet does not work: web apps keep loading files
+    in the background.
 
 ## Making the README images
 

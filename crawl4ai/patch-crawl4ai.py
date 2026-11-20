@@ -15,7 +15,11 @@
    below holds both, and the build fails if Playwright's list grows past it.
 3. Give each /md call a browser context of its own: no cookies or storage left over
    from other calls, closed when the call ends.
-4. Write supervisord's pid file to /tmp, so the container can run on a read-only disk.
+4. Read pages that draw themselves with JavaScript. Such a page (a web app on your
+   network, for example) can look empty when Crawl4AI first reads it, and its
+   anti-bot check then calls it a block page ("Structural: script_heavy_shell").
+   The call now reads it once more, waiting up to 10 seconds for the page to show text.
+5. Write supervisord's pid file to /tmp, so the container can run on a read-only disk.
 
 Each edit checks the upstream text first; the build fails if it is not there.
 """
@@ -81,7 +85,7 @@ yaml.safe_dump(config, open("/app/config.yml", "w"), sort_keys=False)
 edit("/app/utils.py", '                "--disable-web-security",\n', "")
 edit("/app/utils.py", '                "--allow-insecure-localhost",\n', "")
 
-# 3: one browser context per /md call
+# 3-4: one browser context per /md call, and a second read for pages drawn by JavaScript
 edit("/app/api.py",
      """        crawler = await get_crawler(browser_cfg)
         result = await crawler.arun(
@@ -97,6 +101,7 @@ edit("/app/api.py",
         # toolbox: a browser context of its own for this call, closed when it ends
         import secrets as _secrets
         _session = "toolbox-" + _secrets.token_hex(16)
+        _sessions = [_session]
         try:
             result = await crawler.arun(
                 url=decoded_url,
@@ -107,13 +112,34 @@ edit("/app/api.py",
                     session_id=_session,
                 )
             )
+            # toolbox: a page drawn by JavaScript can look empty before its scripts finish.
+            # Read it once more in a fresh context, waiting for the page to show text.
+            # (Waiting for the network to go quiet does not work: web apps keep loading
+            # files in the background.) Keep the first answer if the second read fails too.
+            if not result.success and "Structural:" in (result.error_message or ""):
+                _sessions.append("toolbox-" + _secrets.token_hex(16))
+                _second = await crawler.arun(
+                    url=decoded_url,
+                    config=CrawlerRunConfig(
+                        markdown_generator=md_generator,
+                        scraping_strategy=LXMLWebScrapingStrategy(),
+                        cache_mode=cache_mode,
+                        session_id=_sessions[-1],
+                        wait_for="js:() => document.body && document.body.innerText.trim().length > 200",
+                        wait_for_timeout=10000,
+                        page_timeout=30000,
+                    )
+                )
+                if _second.success:
+                    result = _second
         finally:
-            try:
-                await crawler.crawler_strategy.browser_manager.kill_session(_session)
-            except Exception:
-                pass
+            for _s in _sessions:
+                try:
+                    await crawler.crawler_strategy.browser_manager.kill_session(_s)
+                except Exception:
+                    pass
 """)
 
-# 4: pid file on the RAM disk
+# 5: pid file on the RAM disk
 edit("/app/supervisord.conf", "[supervisord]\n", "[supervisord]\npidfile=/tmp/supervisord.pid\n")
 print("patch-crawl4ai: applied")
