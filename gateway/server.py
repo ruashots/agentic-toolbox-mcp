@@ -581,8 +581,11 @@ def synthesize_speech(
             it the model runs Whisper to transcribe the clip, which on CPU costs more than
             the synthesis itself.
         steps: diffusion steps, 1-64. 32 (default) for quality, 16 for roughly double speed.
-        normalize_numbers: expand digits to words before speaking ("123" -> "one hundred
-            twenty-three"). Leave off if the text already spells numbers out.
+        normalize_numbers: write numbers, dates and amounts out as words before speaking,
+            for English and Chinese text ("I have 123 apples" -> "I have one hundred and
+            twenty three apples", "25本书" -> "二十五本书"). Leave it off for other languages
+            (their numbers would be read in English), for phone numbers and codes (they can
+            come out wrong), and when the text already spells numbers out.
 
     Returns:
         {audio_b64, format: "wav", sample_rate, audio_seconds, generate_seconds,
