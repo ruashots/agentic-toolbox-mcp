@@ -261,8 +261,11 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
 
     Args:
         query: search terms
-        max_results: how many results to return, 1 to 30 (default 10)
+        max_results: the most results to return, 1 to 30 (default 10). This is one page
+            of results from the engines, often 10 to 20, so you may get fewer.
     """
+    if not 1 <= max_results <= 30:
+        raise ValueError(f"max_results must be between 1 and 30, not {max_results}")
     r = httpx.get(
         f"{SEARXNG_URL}/search",
         params={"q": query, "format": "json"},
@@ -291,7 +294,7 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
             "snippet": x.get("content", "")[:300],
             "engine": x.get("engine", ""),
         }
-        for x in results[: min(max_results, 30)]
+        for x in results[:max_results]
     ]
 
 

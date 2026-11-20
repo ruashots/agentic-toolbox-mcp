@@ -69,3 +69,9 @@ def test_a_bad_link_names_the_link_and_does_not_blame_the_toolbox():
         message = str(err.value)
         assert f"could not download {url}" in message
         assert "not reachable" not in message
+
+
+@pytest.mark.parametrize("n", [0, -1, 31])
+def test_search_refuses_a_result_count_outside_1_to_30(n):
+    with pytest.raises(ToolError, match="between 1 and 30"):
+        call("search_web", {"query": "anything", "max_results": n})
