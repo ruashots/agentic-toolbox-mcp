@@ -10,7 +10,7 @@ One self-hosted MCP endpoint. **27 tools. No API keys required.** Run it with Do
 
 Host it on a workstation or home server and share it across your MCP clients. Speech and document processing run on your hardware; web tools reach the sites you ask for.
 
-[Get started](#quick-start) · [Tools](#whats-in-the-box) · [Agent guide](AGENT_HANDOFF.md) · [Operations](docs/operations.md)
+[Get started](#quick-start) · [Tools](#whats-in-the-box) · [Extend it](#extend-the-toolbox) · [Agent guide](AGENT_HANDOFF.md) · [Operations](docs/operations.md)
 
 ![Recorded demo showing web search, page reading, browser navigation, and video metadata through the toolbox](docs/media/demo.svg)
 
@@ -35,6 +35,7 @@ The toolbox supplies the tools; your agent chooses and combines them. The [agent
 ## Why run this toolbox?
 
 - **One connection for the whole stack.** Search, browsing, files, video, and speech appear through a single MCP endpoint.
+- **Room for your own tools.** Add Python functions, connect another service, or mount an existing MCP server behind the same endpoint. Connected agents discover the additions when they reconnect.
 - **Two ways to read the web.** Crawl4AI renders pages into Markdown. Camoufox adds a stealth Firefox browser, screenshots, and stateful click-and-fill workflows.
 - **Local speech without a GPU requirement.** Whisper handles transcription; OmniVoice generates speech with optional voice cloning. AMD GPU acceleration is available for transcription.
 - **Health checks that do real work.** A watcher searches, loads pages, converts fixtures, and tests audio. Tool errors include health context and suggested alternatives, helping agents avoid pointless retries.
@@ -136,6 +137,18 @@ Your MCP clients
 ```
 
 The browser MCP server is mounted through FastMCP, so its tools appear alongside the gateway's own tools. Containers restart with Docker unless explicitly stopped. See [operations](docs/operations.md) for architecture, health-check schedules, upgrades, and troubleshooting.
+
+## Extend the toolbox
+
+The 27 bundled tools are a starting point. You can extend your installation with capabilities your agents need while keeping one MCP connection per client. There are three main paths:
+
+- **Write a tool in Python.** Add an `@mcp.tool` function in [`gateway/server.py`](gateway/server.py), with a clear docstring describing when to use it. Pin any new Python dependencies in [`gateway/requirements.lock`](gateway/requirements.lock).
+- **Connect a backing service.** Add its container to [`docker-compose.yml`](docker-compose.yml) on the `toolbox` network, inherit the `*private` logging defaults, and expose the capability through a gateway tool. The existing search and speech services demonstrate this pattern.
+- **Reuse an existing MCP server.** Mount it through FastMCP's `create_proxy()` and `mcp.mount()`, following the Camoufox integration in the gateway. Its tools can then appear alongside the toolbox's own tools.
+
+For new capabilities, add a real-job check and description in [`gateway/watch.py`](gateway/watch.py), plus fallback guidance in the gateway's `_ALTERNATIVES`. This lets agents see health information and useful alternatives when a tool fails.
+
+Extensions require changes to the installation and a rebuild of the affected images, including the watcher when its checks change. After restarting the services, reconnect your clients to discover the new tools at the same `/mcp` URL. See [Adding a tool](docs/operations.md#adding-a-tool) for the implementation and rebuild steps.
 
 ## Transcription on an AMD GPU
 
