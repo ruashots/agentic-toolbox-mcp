@@ -51,3 +51,11 @@ engines:
     disabled: false
   - name: yep
     disabled: false
+  # Not loaded at all. Neither adds anything to search_web's results (wikidata only
+  # fills SearXNG's own info boxes, which search_web does not return, and radio
+  # browser finds radio stations), and each one contacted its servers every time
+  # SearXNG started.
+  - name: wikidata
+    inactive: true
+  - name: radio browser
+    inactive: true

@@ -210,6 +210,8 @@ What leaves your machine:
   (about 1.6 GB) for the speech service. The speech models are pinned to one
   version, and once they are downloaded the speech service starts without
   contacting Hugging Face.
+- When SearXNG starts, it downloads the ClearURLs list of tracking parameters
+  (rules1.clearurls.xyz) and uses it to strip them from result links.
 - A lookup of your public IP address (api.ipify.org, or a similar service if that
   fails) each time the browser starts. Camoufox uses it to match the browser's time
   zone and language to your IP.
