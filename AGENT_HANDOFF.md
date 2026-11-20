@@ -126,7 +126,8 @@ Switch to `cf_browse` when you see any of:
   "Access denied" or "Bot detected".
 - The site is known to use Cloudflare Turnstile, DataDome, PerimeterX or Akamai Bot
   Manager.
-- Crawl4AI returns an error that mentions a challenge or a 403.
+- `fetch_page` fails with `net::ERR_HTTP_RESPONSE_CODE_FAILURE` (the site answered
+  with an error status, often a block) or `Blocked by anti-bot protection`.
 
 Realistic mouse movement and human-like timing (`humanize`) are on by default; keep
 them on for hostile sites.

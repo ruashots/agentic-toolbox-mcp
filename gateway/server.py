@@ -13,6 +13,7 @@ Exposed at: http://<host>:8000/mcp (streamable HTTP transport)
 import base64
 import json
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
@@ -62,11 +63,24 @@ md_converter = MarkItDown()
 
 def _backend_error(r: httpx.Response) -> str:
     """The reason a backing service gave for an error, instead of a bare status line."""
+    reason = None
     try:
-        detail = r.json().get("detail")
+        body = r.json()
+        if isinstance(body, dict):
+            reason = body.get("detail") or body.get("message") or body.get("error")
     except Exception:
-        detail = None
-    return f"{r.status_code}: {detail or r.text.strip()[:500] or r.reason_phrase}"
+        pass
+    return f"{r.status_code}: {reason or r.text.strip()[:500] or r.reason_phrase}"
+
+
+def _crawl_error(r: httpx.Response) -> str:
+    """Crawl4AI wraps the browser's error in its own traceback text; keep what happened."""
+    reason = _backend_error(r).split("\n\nCode context:")[0]
+    for pattern in (r"net::ERR_\w+ at \S+", r"Blocked by anti-bot protection[^\n]*"):
+        m = re.search(pattern, reason)
+        if m:
+            return m.group(0)
+    return reason[:600]
 
 
 # ---------------------------------------------------------------------------
@@ -237,7 +251,8 @@ def search_web(query: str, max_results: int = 10) -> list[dict]:
         params={"q": query, "format": "json"},
         timeout=20,
     )
-    r.raise_for_status()
+    if r.is_error:
+        raise RuntimeError(f"search failed: {_backend_error(r)}")
     payload = r.json()
     results = payload.get("results", [])
     # SearXNG answers 200 with an empty list in two very different cases: the
@@ -280,7 +295,8 @@ def fetch_page(url: str, render_js: bool = True) -> str:
         json={"url": url, "f": "fit"},  # fit = readability-style extraction
         timeout=90,
     )
-    r.raise_for_status()
+    if r.is_error:
+        raise RuntimeError(f"could not fetch {url}: {_crawl_error(r)}")
     body = r.json()
     return body.get("markdown", "") or body.get("html", "")
 
@@ -430,7 +446,8 @@ def pdf_extract_text(source: str) -> str:
         data={"outputFormat": "txt"},
         timeout=120,
     )
-    r.raise_for_status()
+    if r.is_error:
+        raise RuntimeError(f"PDF text extraction failed: {_backend_error(r)}")
     return r.text
 
 
