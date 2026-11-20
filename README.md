@@ -17,8 +17,8 @@ Docker Compose command and needs no accounts or API keys.
   that speaks MCP at the same endpoint. Add a tool once and every agent that connects
   gets it. Nothing to install per agent.
 - **Your agent finds out when a tool is broken.** A watcher runs real test jobs on a
-  schedule: one for each tool, and one for the 17 browser tools, which share a
-  browser. When a call fails, the error tells the agent whether that tool is a known
+  schedule: one for each tool except `toolbox_status` (which reports them), and one
+  for the 17 browser tools, which share a browser. When a call fails, the error tells the agent whether that tool is a known
   outage, since when, and which tool to use instead.
 - **It keeps no record of what agents ask.** Container logs are off, scratch files
   live in RAM, and the caches and audit logs of the services underneath are switched
@@ -131,8 +131,8 @@ The rest of the build still downloads its packages.
 ## How your agent finds out a tool is broken
 
 The `tb-watch` container calls the tools through the same endpoint your agents use,
-with fixed test inputs: one check for each tool, and one browser check for all the
-`cf_*` tools, from every minute to every six hours depending on the tool. A tool
+with fixed test inputs: one check for each tool except `toolbox_status`, and one
+browser check for all the `cf_*` tools, from every minute to every six hours depending on the tool. A tool
 that fails twice in a row is marked down, and one good check marks it up again. A
 browser check that only had to wait because the browser was busy (another call, or
 an open multi-step session) counts as neither, and agents whose browser call waited

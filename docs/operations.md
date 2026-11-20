@@ -55,8 +55,8 @@ Three patterns hold it together:
 
 `tb-watch` (code in `gateway/watch.py`) calls the tools through the public MCP
 endpoint, the same way an agent does, with fixed test inputs, and checks the answer.
-There is one check for each tool, and one for all the `cf_*` tools, which share a
-browser:
+There is one check for each tool except `toolbox_status` (it reports the checks),
+and one for all the `cf_*` tools, which share a browser:
 
 | Check | Test job | Every |
 |---|---|---|
