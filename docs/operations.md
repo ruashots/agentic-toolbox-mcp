@@ -147,7 +147,7 @@ stayed green. Now these are pinned and checked:
 | camoufox-js fix for browser 156 | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-camoufox-js.sh` |
 | Browser fix for DNS-blocked trackers | build-time patch; the build fails if it does not apply | `gateway/camoufox-mcp/patch-dns-sinkhole.py` |
 | Gateway Python packages | full lock file | `gateway/requirements.lock` |
-| Node | exact package `22.23.3-1nodesource1` | `gateway/Dockerfile` |
+| Node 22.23.3 and pnpm 9.15.9 | the nodejs.org and npm registry files, sha256 and sha512 checked at build | `gateway/Dockerfile` (`NODE_*`, `PNPM_SHA512`) |
 | Base images | `@sha256:` digests | every Dockerfile |
 | SearXNG, Crawl4AI, Stirling-PDF images | `@sha256:` digests | `docker-compose.yml`, `crawl4ai/Dockerfile` |
 | Crawl4AI's browser settings: no web-security bypass, no calls of its own to Google, one browser context per call | build-time patch; the build fails if it does not apply, or if Playwright's own list of switched-off features grows | `crawl4ai/patch-crawl4ai.py` |
@@ -168,8 +168,6 @@ Not pinned, on purpose or by nature:
 - **The GeoIP database** the browser uses to match its time zone and language to
   your public IP is downloaded at build time. Its only source keeps just its last
   two releases, so a checksum would break within days.
-- **The NodeSource setup script**, which adds Node's package source, is fetched at
-  build time. The Node package it installs is pinned.
 
 ## Updating a pinned part
 
@@ -207,6 +205,9 @@ Per part:
   `MODEL_REVISION` (or `ASR_REVISION`) in `tts/server.py`, and rebuild `tts`. The next
   speech request downloads that revision; the old one stays in the `tts-models`
   volume until you remove it.
+- **Node:** set `NODE_VERSION` and `NODE_SHA256` in `gateway/Dockerfile`, taking the
+  sha256 of `node-v<version>-linux-x64.tar.gz` from
+  `https://nodejs.org/dist/v<version>/SHASUMS256.txt`.
 - **The browser driver:** in a scratch folder, run
   `pnpm add camoufox-mcp-server@X playwright-core@Y` with `auto-install-peers=false`,
   then copy `package.json` and `pnpm-lock.yaml` into `gateway/camoufox-mcp/`. Check

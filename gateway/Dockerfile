@@ -4,7 +4,7 @@
 # the last one, months later, with nobody having changed anything. Nothing is
 # allowed to fetch "the newest" version at build time or at run time:
 #   - base image pinned by digest
-#   - Node pinned to an exact NodeSource package version
+#   - Node: the nodejs.org build of one version, checked by sha256; pnpm the same way
 #   - Python deps installed from requirements.lock (exact versions, all transitive)
 #   - the browser tool server installed from camoufox-mcp/pnpm-lock.yaml
 #   - the Camoufox browser itself: one exact release, checked by sha256
@@ -16,16 +16,26 @@ FROM python:3.12.15-slim-trixie@sha256:a0f57064cbdcd6285fa45f51237ab0b35ea8ebaed
 RUN apt-get update && apt-get install -y --no-install-recommends \
         ca-certificates \
         ffmpeg \
-        curl gnupg \
+        curl \
         build-essential python3 \
         libgtk-3-0 libdbus-glib-1-2 libasound2 \
         libx11-xcb1 libxcomposite1 libxdamage1 libxrandr2 libxtst6 \
         libpangocairo-1.0-0 libcairo2 libfontconfig1 libfreetype6 \
         libxkbcommon0 libxshmfence1 libnss3 libatk1.0-0 libatk-bridge2.0-0 \
         xvfb \
-    && curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs=22.23.3-1nodesource1 \
     && rm -rf /var/lib/apt/lists/*
+
+# Node from nodejs.org, checked against the sha256 nodejs.org publishes for this file.
+# (It is byte for byte the node binary the NodeSource package of this version had.)
+ARG NODE_VERSION=22.23.3
+ARG NODE_SHA256=1084aa36196bba4c3a5e69a1ee388a6e4ff729dad09445fbcd434b28fe3c24af
+RUN curl -fsSL -o /tmp/node.tar.gz "https://nodejs.org/dist/v${NODE_VERSION}/node-v${NODE_VERSION}-linux-x64.tar.gz" \
+    && echo "${NODE_SHA256}  /tmp/node.tar.gz" | sha256sum -c - \
+    && tar -xzf /tmp/node.tar.gz -C /usr/local --strip-components=1 --no-same-owner \
+        "node-v${NODE_VERSION}-linux-x64/bin" "node-v${NODE_VERSION}-linux-x64/lib" \
+        "node-v${NODE_VERSION}-linux-x64/include" "node-v${NODE_VERSION}-linux-x64/share" \
+    && rm /tmp/node.tar.gz \
+    && node --version
 
 WORKDIR /app
 
@@ -36,7 +46,12 @@ RUN pip install --no-cache-dir -r requirements.lock
 # installed from the lockfile so no transitive dependency can float.
 # pnpm 9, not 10: pnpm 10 skips install scripts, which breaks better-sqlite3's native build.
 # .npmrc keeps auto-install-peers=false, matching the lockfile.
-RUN npm install -g pnpm@9.15.9
+# The registry's own integrity value for pnpm 9.15.9, as sha512 hex.
+ARG PNPM_SHA512=68046141893c66fad01c079231128e9afb89ef87e2691d69e4d40eee228988295fd4682181bae55b58418c3a253bde65a505ec7c5f9403ece5cc3cd37dcf2531
+RUN curl -fsSL -o /tmp/pnpm.tgz https://registry.npmjs.org/pnpm/-/pnpm-9.15.9.tgz \
+    && echo "${PNPM_SHA512}  /tmp/pnpm.tgz" | sha512sum -c - \
+    && npm install -g /tmp/pnpm.tgz \
+    && rm /tmp/pnpm.tgz
 WORKDIR /opt/camoufox-mcp
 COPY camoufox-mcp/package.json camoufox-mcp/pnpm-lock.yaml camoufox-mcp/.npmrc ./
 RUN pnpm install --frozen-lockfile --prod
