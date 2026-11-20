@@ -16,6 +16,8 @@ It takes under a minute. Set DEMO_SVG to also save the output as an image
 import asyncio
 import json
 import os
+import re
+import sys
 import time
 
 from fastmcp import Client
@@ -43,6 +45,15 @@ def row(tool, what, seconds):
     took = f"{seconds:5.1f} s"
     pad = max(1, WIDTH - 16 - len(what) - len(took))
     console.print(Text.assemble((f"{tool:<15} ", "bold cyan"), what, " " * pad, (took, "dim")))
+
+
+def clip(text, width):
+    """Shorten text to width at a word boundary, ending with an ellipsis."""
+    text = " ".join(str(text).split())
+    if len(text) <= width:
+        return text
+    cut = text[: width - 1].rsplit(" ", 1)[0].rstrip(" \\|-:,")
+    return cut + "\u2026"
 
 
 def detail(text, style=""):
@@ -73,7 +84,7 @@ async def main():
             detail(str(data(r)), "red")
         for i, hit in enumerate([] if r.is_error else data(r), 1):
             site = hit["url"].split("/")[2].removeprefix("www.")
-            detail(f"{i}. {hit['title'][:43]:<43}  {site}")
+            detail(f"{i}. {clip(hit['title'], 43):<43}  {site}")
 
         page = "https://en.wikipedia.org/wiki/Large_language_model"
         r, s = await call(c, "fetch_page", {"url": page})
@@ -109,7 +120,13 @@ async def main():
 
     svg = os.environ.get("DEMO_SVG")
     if svg:
-        console.save_svg(svg, title="docker exec tb-gateway python demo.py")
+        image = console.export_svg(title="docker exec tb-gateway python demo.py")
+        # Rich draws macOS-style window buttons. The toolbox runs on Linux: leave them out.
+        image, found = re.subn(r'\s*<g transform="translate\(26,22\)">\s*(?:<circle [^>]*/>\s*){3}</g>', "", image)
+        if found != 1:
+            sys.exit("demo: the window buttons were not found in the image")
+        with open(svg, "w") as f:
+            f.write(image)
 
 
 asyncio.run(main())
