@@ -67,12 +67,13 @@ Three patterns hold it together:
 `tb-watch` (code in `gateway/watch.py`) calls the tools through the public MCP
 endpoint, the same way an agent does, with fixed test inputs, and checks the answer.
 There is one check for each tool except `toolbox_status` (it reports the checks),
-and one for all the `cf_*` tools, which share a browser:
+and one for all the `cf_*` tools, which share a browser. Two more checks read a
+page on your own network with the same page-reading tools:
 
 | Check | Test job | Every |
 |---|---|---|
 | ping | `ping` returns pong | 1 min |
-| search_web | a search for "wikipedia" returns results | 10 min |
+| search_web | searches "docker compose healthcheck", asks for 5 results, and needs at least 3 with at least two of those words in their title, snippet or URL (case ignored) | 10 min |
 | fetch_page | wikipedia.org contains "Wikipedia" | 10 min |
 | cf_browse | the stealth browser loads python.org and the answer has its page title (one check covers all 17 `cf_*` tools: they share one browser) | 10 min |
 | convert_document | `gateway/fixtures/check.html` converts and its marker is found | 30 min |
@@ -81,6 +82,17 @@ and one for all the `cf_*` tools, which share a browser:
 | synthesize_speech | "Health check." comes back as real audio | 1 h |
 | extract_video | metadata of the first video on YouTube ("Me at the zoo", 19 s) | 6 h |
 | download_media | the audio of that same video | 6 h |
+| fetch_page_lan | `fetch_page` reads the network page and the answer contains the expected text | 10 min |
+| cf_browse_lan | `cf_browse` reads the same network page and the answer contains the expected text | 10 min |
+
+The network checks default to `http://stirling-pdf:8080/`, the toolbox's own
+Stirling-PDF page, and look for "No files yet" (case ignored). This checks a private
+address and a page that draws itself with JavaScript. To check another page, set
+`LAN_CHECK_URL` and `LAN_CHECK_TEXT` in `.env`; choose text the page always shows.
+Apply the settings with `docker compose up -d --no-deps --force-recreate watch`.
+These are separate checks in `toolbox_status`, not extra tools. In `status.json`,
+`covers` maps tools to their main checks and `lan_checks` maps `fetch_page` and
+`cf_browse` to their network checks.
 
 - A tool is marked **down** after 2 failed checks in a row (a first failure is
   checked again after 60 seconds) and **up** after one good check. While a tool is
@@ -93,7 +105,10 @@ and one for all the `cf_*` tools, which share a browser:
 - Agents see the result in the failing call itself. Every tool error ends with a
   line saying whether the tool is a known outage (since when; retrying will not
   help), failed its latest check, or passed it (one retry is reasonable), and which
-  tool to use instead. The `toolbox_status` tool shows every tool at once.
+  tool to use instead. For a failed `fetch_page` or `cf_*` call, if its network check is down,
+  the note gives the failure start time and warns against retrying a network address.
+  Browser-busy errors keep their separate note. The `toolbox_status` tool shows
+  every check at once.
 - The status lives in the `tb-health` volume, so a watcher restart does not forget
   an outage.
 - `docker logs tb-watch` shows each check's result. That log only ever contains the
@@ -161,13 +176,28 @@ stayed green. Now these are pinned and checked:
 | Gateway Python packages | full lock file, each package with the sha256 of its files; the build refuses any other file | `gateway/requirements.lock` |
 | Node 22.23.3 and pnpm 9.15.9 | the nodejs.org and npm registry files, sha256 and sha512 checked at build | `gateway/Dockerfile` (`NODE_*`, `PNPM_SHA512`) |
 | Base images | `@sha256:` digests | every Dockerfile |
-| SearXNG, Crawl4AI, Stirling-PDF images | `@sha256:` digests | `docker-compose.yml`, `crawl4ai/Dockerfile` |
+| SearXNG 2026.11.21, Crawl4AI, Stirling-PDF images | `@sha256:` digests | `docker-compose.yml`, `crawl4ai/Dockerfile` |
 | Crawl4AI's browser settings: no web-security bypass, no calls of its own to Google, one browser context per call | build-time patch; the build fails if it does not apply, or if Playwright's own list of switched-off features grows | `crawl4ai/patch-crawl4ai.py` |
 | whisper.cpp | git commit | `whisper/Dockerfile` (`WHISPER_CPP_COMMIT`) |
 | Whisper models for transcription | one commit of Hugging Face's `ggerganov/whisper.cpp`; each file's sha256 checked after download, and a file that does not match is deleted | `whisper/models.py` |
 | OmniVoice | git commit | `tts/Dockerfile` (`OMNIVOICE_COMMIT`) |
 | Whisper and TTS Python packages, PyTorch included | full lock files with sha256, as above; PyTorch comes only from the PyTorch CPU index and everything else only from PyPI | `whisper/requirements.lock`, `tts/requirements.lock`, `tts/requirements-torch.lock` |
 | OmniVoice voice model, and the Whisper model it uses to transcribe cloning clips | Hugging Face revision; downloaded once, then loaded from the `tts-models` volume without contacting Hugging Face | `tts/server.py` (`MODEL_REVISION`, `ASR_REVISION`) |
+
+SearXNG has Bing off and Brave, Yandex and Yahoo switched on from their defaults
+(off). The comment
+above `engines` in `searxng/settings.yml` records eight searches measured on
+2026-11-21: on-topic results were Google CSE 79/80, Brave 78/80, Yandex 78/80,
+DuckDuckGo 70/70, Yahoo 55/56 and Bing 3/80. Bing answered for just one word of the
+search. Startpage, Qwant, Mojeek, Presearch, AOL and Yep refused or failed from the
+same network; the defaults among them stay on. SearXNG pauses engines that keep
+failing and tries them again later, so a paused engine costs nothing and comes
+back on its own if the block lifts.
+
+To replace SearXNG's placeholder `secret_key` without editing a tracked file, set
+`SEARXNG_SECRET` in `.env` to a random string (for example, the output of
+`openssl rand -hex 32`), then run
+`docker compose up -d --no-deps --force-recreate searxng`. This setting is optional.
 
 The gateway build also launches the browser and renders a page
 (`gateway/camoufox-mcp/selftest.mjs`). If the driver and the browser do not work
@@ -272,9 +302,11 @@ What leaves the machine:
 
 - What agents ask for. Searches go to search engines through SearXNG, and pages,
   videos and files are fetched from their sites.
-- The watcher's test jobs: a search for "wikipedia" and visits to wikipedia.org and
-  python.org every 10 minutes, and the details and audio of one 19-second YouTube
-  video every 6 hours.
+- The watcher's test jobs: a search for "docker compose healthcheck" and visits to
+  wikipedia.org and python.org every 10 minutes, and the details and audio of one
+  19-second YouTube video every 6 hours. Both page readers also check a network page
+  every 10 minutes: by default it stays inside Docker at `http://stirling-pdf:8080/`;
+  setting `LAN_CHECK_URL` sends those requests to the chosen address instead.
 - Model downloads from Hugging Face, each only the first time it is needed: a
   Whisper model the first time it is used, the voice model on the first speech
   request, and, for a voice clone without the clip's transcript, a Whisper model

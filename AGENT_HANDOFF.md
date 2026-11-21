@@ -108,7 +108,7 @@ Once `ping` works, you have every tool. Carry on.
 | Get the audio or video **file** itself | `download_media` | Takes the best stream as is, with no re-encoding, and returns it as base64 (`content_b64`): decode and save it. `kind="audio"` or `"video"`. Files over `max_mb` (default 25) are refused. Use it when you need the media, not its text. |
 | Transcribe audio or video that has no captions | `transcribe_audio` | Local Whisper, on the toolbox's GPU if it has one, otherwise on its CPU. See **Model selection**: bigger is not always better. |
 | Turn text into speech | `synthesize_speech` | CPU only, slower than real time. Split long scripts into paragraphs or sentences. See **Text to speech** below. |
-| See which tools work right now | `toolbox_status` | Each tool's latest scheduled check: up, down (a known outage) or not checked yet. |
+| See which tools work right now | `toolbox_status` | Each tool's latest scheduled check: up, down (a known outage) or not checked yet. `fetch_page_lan` and `cf_browse_lan` separately check page reading on your own network. |
 | Check the toolbox is reachable | `ping` | Returns `"pong"`. |
 
 ---
@@ -267,8 +267,18 @@ keeps its headings and tables as markdown.
 - **When a tool fails, read the end of the error.** The toolbox adds a line saying
   whether the tool is a known outage (retrying will not help; use the alternative it
   names), failed its latest scheduled check (it may be breaking), or passed it (one
-  retry is reasonable). `toolbox_status` lists every tool's state. Do not loop on
-  retries.
+  retry is reasonable). For a failed `fetch_page` or `cf_*` call, if its network check is down,
+  the note gives the failure start time and warns against retrying a network address.
+  Browser-busy errors keep their separate note. `toolbox_status` lists every check's
+  state. Do not loop on retries.
+- **The watcher checks search relevance and network pages every 10 minutes.** Its
+  search for "docker compose healthcheck" asks for 5 results and needs at least 3
+  with at least two of those words in their title, snippet or URL (case ignored).
+  `fetch_page_lan` and `cf_browse_lan` are checks, not tools: by default both read the toolbox's
+  Stirling-PDF page at `http://stirling-pdf:8080/` and look for "No files yet"
+  (case ignored). `LAN_CHECK_URL` and `LAN_CHECK_TEXT` in `.env` can select another
+  page and its expected text. A passing internet check does not mean the network
+  check passed; check both before relying on page reading on your network.
 - **A browser call that fails with "Connection closed"** ran while the browser server
   stopped. Call again: the next call starts a new browser server within seconds.
 - **The browser handles one page at a time.** Up to 8 more browser calls wait in a
