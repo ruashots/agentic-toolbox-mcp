@@ -1,14 +1,16 @@
 # Agentic Toolbox MCP
 
-**Give your AI agent the tools to research, browse, read, transcribe, and speak.**
+**One MCP server for all your agents: search, browse, read, transcribe, and speak.**
 
 [![CI](https://github.com/ruashots/agentic-toolbox-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/ruashots/agentic-toolbox-mcp/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tools: 27](https://img.shields.io/badge/MCP_tools-27-06b6d4)](#whats-in-the-box)
 
-One self-hosted MCP endpoint. **27 tools. No API keys required.** Run it with Docker Compose, connect your agent, and put web search, two browser engines, document conversion, video tools, local transcription, and speech generation within reach.
+One self-hosted Model Context Protocol (MCP) endpoint. **27 tools. No API keys required by the bundled toolbox.** Run one Docker Compose stack and connect your compatible agent clients to the same URL for web search, two browser engines, document conversion, video tools, local transcription, and speech generation.
 
-Host it on a workstation or home server and share it across your MCP clients. Speech and document processing run on your hardware; web tools reach the sites you ask for.
+Built for a shared tool layer across local-LLM agents, coding assistants, and custom agent applications. It is especially useful when an agent's current setup has no web search or you want a self-hosted search service shared across clients. The toolbox supplies tools, not the agent's language model or runtime; those remain your choice and may have their own credentials and costs.
+
+Host it on a workstation or home server and share it across your MCP clients. Speech and document processing run on the toolbox host; web search and browsing make external requests.
 
 [Get started](#quick-start) · [Tools](#whats-in-the-box) · [Extend it](#extend-the-toolbox) · [Agent guide](AGENT_HANDOFF.md) · [Operations](docs/operations.md)
 
@@ -16,7 +18,17 @@ Host it on a workstation or home server and share it across your MCP clients. Sp
 
 *Actual tool output captured by the included [demo script](gateway/demo.py). Run it against your own installation with `docker exec tb-gateway python demo.py`.*
 
-## What will you build with it?
+## Which agents can use it?
+
+The connection requirement is an **MCP client with Streamable HTTP support** that can reach the toolbox host and expose its tools to an agent. Compatibility depends on the client and its configuration, not just the model name.
+
+- **Local-LLM agents:** connect through an MCP-capable application or your own client integration. That application must let the model select tools, execute the calls, and return results to the model. Running a local model alone does not provide that integration. The Compose stack does not include an agent LLM server.
+- **Coding assistants:** [Codex supports Streamable HTTP MCP servers](https://learn.chatgpt.com/docs/extend/mcp), and [Claude Code supports HTTP MCP servers](https://code.claude.com/docs/en/mcp). Both can connect to this endpoint through their MCP configuration.
+- **Custom agents and other MCP clients:** use the connection settings below. Clients that only support stdio need a separate adapter or HTTP integration; this Compose stack exposes Streamable HTTP.
+
+This toolbox is especially useful for local-LLM agents and Codex or Claude Code setups without usable built-in search. [Codex web search](https://learn.chatgpt.com/docs/web-search) is a hosted OpenAI tool: custom providers default to `supports_standalone_web_search = false`, and standalone search is still under development and disabled by default. [Claude Code's WebSearch](https://code.claude.com/docs/en/tools-reference#websearch-tool-behavior) is a server-side tool available through the Claude API, Claude Platform on AWS, Claude Models on Google Cloud (Anthropic managed), and Microsoft Foundry; Amazon Bedrock does not expose it. Its search backend cannot be configured, and the documentation directs users to an MCP search server for a different provider. Here, `search_web` supplies SearXNG-backed search through MCP, giving compatible clients a shared search service when their setup lacks search or they want a self-hosted alternative.
+
+## What will your agents build with it?
 
 Give a connected agent a task like:
 
@@ -30,23 +42,23 @@ Give a connected agent a task like:
 
 > “Turn this script into a narrated WAV file.”
 
-The toolbox supplies the tools; your agent chooses and combines them. The [agent guide](AGENT_HANDOFF.md) includes selection rules, fallbacks, and recipes you can add to its context.
+The toolbox supplies the tools; each agent chooses and combines them through its client. The [agent guide](AGENT_HANDOFF.md) includes selection rules, fallbacks, and recipes you can add to your agents' context.
 
 ## Why run this toolbox?
 
-- **One connection for the whole stack.** Search, browsing, files, video, and speech appear through a single MCP endpoint.
+- **One shared endpoint for your agents.** Configure each compatible client to use the same toolbox URL. Search, browsing, files, video, and speech appear through that endpoint.
 - **Room for your own tools.** Add Python functions, connect another service, or mount an existing MCP server behind the same endpoint. Connected agents discover the additions when they reconnect.
 - **Two ways to read the web.** Crawl4AI renders pages into Markdown. Camoufox adds a stealth Firefox browser, screenshots, and stateful click-and-fill workflows.
 - **Local speech without a GPU requirement.** Whisper handles transcription; OmniVoice generates speech with optional voice cloning. AMD GPU acceleration is available for transcription.
 - **Health checks that do real work.** A watcher searches, loads pages, converts fixtures, and tests audio. Tool errors include health context and suggested alternatives, helping agents avoid pointless retries.
 - **Deliberate privacy defaults.** Agent request logs are disabled, temporary files live in RAM-backed storage, and browser sessions expire. See the [privacy details](#security-and-privacy) for the boundaries.
-- **Pinned builds and browser checks.** Container images, dependencies, and model revisions are pinned. The gateway build tests browser startup and network-access rules.
+- **Version pins and browser checks.** Base and service images use digests, Python and Node dependencies use lockfiles, and speech model downloads use pinned revisions. OS packages installed with `apt-get` are not individually pinned. The gateway build tests browser startup and network-access rules.
 
 ## Quick start
 
 ### 1. Start the stack
 
-You need an **x86-64 machine**, Docker with **Compose v2**, at least **8 GB RAM**, and **55 GB free disk**. No GPU or API keys are required. This is a seven-container stack: plan for an initial download of roughly 5.5 GB and about 37–50 GB of images, build cache, and models afterward, depending on Docker's storage setup.
+Use an **x86-64 machine** with Docker and **Compose v2**. Budget at least **8 GB RAM** and **55 GB free disk** for the toolbox, with additional capacity for any local agent models and concurrent work. No GPU or API keys are required by the bundled services. This is a seven-container stack; downloads, images, build cache, and model caches consume additional space as you build and use it.
 
 ```bash
 git clone https://github.com/ruashots/agentic-toolbox-mcp.git
@@ -64,9 +76,9 @@ docker logs --tail 30 tb-watch
 
 Look for checks such as `[watch] ping: ok` and `[watch] search_web: ok`. Speech models download on first use, including the watcher's first speech checks. Speech synthesis may initially show as down while its roughly 3 GB model downloads, then recover automatically.
 
-### 2. Connect your agent
+### 2. Connect your agents
 
-Add a server to your MCP client with these settings:
+Add a server to each MCP client with these settings:
 
 | Setting | Value |
 |---|---|
@@ -76,9 +88,27 @@ Add a server to your MCP client with these settings:
 | URL, from another machine | `http://<server-address>:8000/mcp` |
 | Authentication | None |
 
-Reconnect or start a new agent session so it discovers the tools. Ask it to call `ping` (expected result: `pong`), then `toolbox_status`.
+For a local-LLM application or custom agent, configure these settings in the component that manages MCP connections and tool execution. The URL must be reachable from that component: `localhost` refers to the client's own environment, which may be a container or remote host.
 
-For setup guidance and tool usage recipes, give your agent [AGENT_HANDOFF.md](AGENT_HANDOFF.md).
+For **Codex CLI**, add the endpoint with:
+
+```bash
+codex mcp add toolbox --url http://localhost:8000/mcp
+```
+
+For **Claude Code**, add it for your user across projects with:
+
+```bash
+claude mcp add --transport http --scope user toolbox http://localhost:8000/mcp
+```
+
+Replace `localhost` with the toolbox host's address when connecting from elsewhere. See the official [Codex MCP configuration](https://learn.chatgpt.com/docs/extend/mcp) and [Claude Code MCP configuration](https://code.claude.com/docs/en/mcp) for client settings and policy controls.
+
+Reconnect or start a new agent session so the client discovers the tools. Ask each agent to call `ping` (expected result: `pong`), then `toolbox_status`. Tool names may have a client-added prefix. For long transcription or synthesis jobs, increase the client's tool-call timeout as needed.
+
+The gateway rejects requests with an unapproved `Origin` header by default. Clients that send one need their trusted origin explicitly configured in the gateway's `FASTMCP_HTTP_ALLOWED_ORIGINS` setting, a JSON list. See [`http_guard()`](gateway/server.py) for the implementation.
+
+For tool usage recipes, give your agents [AGENT_HANDOFF.md](AGENT_HANDOFF.md). Its Claude Code setup examples are client-specific; the tool guidance also applies to other connected agents.
 
 ### 3. See it work
 
@@ -86,7 +116,7 @@ For setup guidance and tool usage recipes, give your agent [AGENT_HANDOFF.md](AG
 docker exec tb-gateway python demo.py
 ```
 
-The demo calls the running toolbox to search the web, read a page, navigate with Camoufox, and fetch video metadata. Then try one of the prompts above with your agent.
+The demo calls the running toolbox to search the web, read a page, navigate with Camoufox, and fetch video metadata. Then try one of the prompts above with your agents.
 
 ## What's in the box?
 
@@ -99,7 +129,7 @@ Ten gateway tools plus seventeen `cf_*` browser tools:
 | Stealth browsing, screenshots, links, forms, and multi-step sessions | `cf_browse`, `cf_browse_screenshot`, `cf_browse_session_*`, and more | Camoufox / Firefox |
 | Word, PowerPoint, Excel, HTML, CSV, EPUB → Markdown | `convert_document` | MarkItDown |
 | PDF text extraction | `pdf_extract_text` | Stirling-PDF |
-| Video metadata and available captions | `extract_video` | yt-dlp |
+| Video metadata and available English auto-captions | `extract_video` | yt-dlp |
 | Audio and video downloads | `download_media` | yt-dlp |
 | Audio/video → text with timestamps | `transcribe_audio` | whisper.cpp |
 | Text → WAV, optional voice cloning | `synthesize_speech` | OmniVoice |
@@ -108,17 +138,18 @@ Ten gateway tools plus seventeen `cf_*` browser tools:
 ### Useful defaults and limits
 
 - **Pages:** try `fetch_page` first, then `cf_browse` for difficult sites. Stealth browsing does not guarantee access to every protected page.
-- **Browser sessions:** one active session holds the browser. Close it when finished; idle sessions expire after 10 minutes.
+- **Shared browser:** all clients share the Camoufox browser. One active session holds it and blocks other Camoufox calls until closed or expired. Close sessions when finished; idle sessions expire after 10 minutes. Sharing the endpoint does not provide a separate browser per agent.
 - **PDFs:** prefer `pdf_extract_text` for reading order and table rows. `convert_document` does not provide OCR for scans or images.
 - **Videos:** try captions with `extract_video` before paying the compute cost of transcription. Downloads return base64 and default to a 25 MB limit.
 - **Transcription:** defaults to `base.en`. For language detection, choose a multilingual model and pass `language="auto"`. Models are downloaded on demand and cached.
-- **Speech:** CPU synthesis is slower than real time; budget roughly 3–5 times the audio length at default quality, depending on hardware. It suits narration and batch work. Supply `reference_text` alongside a voice reference to avoid an extra transcription step.
+- **Speech:** synthesis runs on CPU and can take longer than the audio's duration. Latency depends on hardware, text length, and quality settings. Supply `reference_text` alongside a voice reference to avoid an extra transcription step.
 - **File paths:** a local path refers to the gateway container's filesystem, not your MCP client's machine. Use a reachable URL when the file is elsewhere.
 
 ## How it fits together
 
 ```text
-Your MCP clients
+Local-LLM agents / coding assistants / custom agents
+       │ MCP-capable clients
        │
        │ Streamable HTTP · :8000/mcp
        ▼
@@ -136,7 +167,7 @@ Your MCP clients
   ¹ Runs inside the gateway container.
 ```
 
-The browser MCP server is mounted through FastMCP, so its tools appear alongside the gateway's own tools. Containers restart with Docker unless explicitly stopped. See [operations](docs/operations.md) for architecture, health-check schedules, upgrades, and troubleshooting.
+The browser MCP server is mounted through FastMCP, so its tools appear alongside the gateway's own tools. Clients share the backing services and their capacity. Containers use Docker's `unless-stopped` restart policy. See [operations](docs/operations.md) for architecture, health-check schedules, upgrades, and troubleshooting.
 
 ## Extend the toolbox
 
