@@ -17,7 +17,7 @@ x-private: &private
 
 services:
   searxng:
-    image: searxng/searxng@sha256:1a9d21346437a41ddfc2286968026dddece1d4d0721625cffa2c3b00bb2f9cf3  # frozen 2026-11-19
+    image: searxng/searxng@sha256:fc1d81d7e9d04d3c8b3e23c7162feddf5c3d6aecd32e67a56eaabcb8d8747f79  # frozen 2026-11-21 (2026.11.21)
     container_name: tb-searxng
     restart: unless-stopped
     <<: *private
@@ -31,6 +31,8 @@ services:
       # Without this the image chowns ./searxng in your clone to its own user,
       # and a later `git pull` cannot update searxng/settings.yml.
       - FORCE_OWNERSHIP=false
+      # Optional, from .env: replaces the placeholder secret_key in settings.yml.
+      - SEARXNG_SECRET
 
   crawl4ai:
     # Frozen upstream image with its record-keeping off and its browser's protections

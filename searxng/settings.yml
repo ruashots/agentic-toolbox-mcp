@@ -37,19 +37,21 @@ outgoing:
   pool_connections: 100
   pool_maxsize: 20
 
-# Engines. Most default general engines refuse automated queries: when tested
-# on 2026-08-31, duckduckgo and startpage answered with a CAPTCHA, brave
-# rate-limited, qwant and wikidata denied access, and google and mojeek parsed
-# to nothing. The three below returned real results the same day. The other
-# defaults stay enabled on purpose: SearXNG pauses an engine that keeps failing
-# and tries it again later, so a paused engine costs nothing and comes back on
-# its own if the block lifts.
+# Engines, measured on 2026-11-21 with eight everyday searches through this
+# SearXNG version. On-topic results out of all results returned:
+#   google 75/79, brave 78/80, duckduckgo 70/70, yandex 75/80, yahoo 55/56.
+#   bing 3/80: it answers for one word of the search only (docker.com for
+#   "docker compose healthcheck"), so it is off.
+# startpage, qwant, mojeek, presearch, aol and yep refused or failed from the
+# same network. The defaults among them stay on: SearXNG pauses an engine that
+# keeps failing and tries it again later, so a paused engine costs nothing and
+# comes back on its own if the block lifts.
 engines:
   - name: bing
-    disabled: false
+    disabled: true
   - name: yandex
     disabled: false
-  - name: yep
+  - name: yahoo
     disabled: false
   # Not loaded at all. Neither adds anything to search_web's results (wikidata only
   # fills SearXNG's own info boxes, which search_web does not return, and radio
