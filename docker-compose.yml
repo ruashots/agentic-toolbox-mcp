@@ -157,7 +157,8 @@ services:
     container_name: tb-watch
     restart: unless-stopped
     # The watcher's log holds only its own fixed test jobs (wikipedia.org, the files in
-    # gateway/fixtures), never agent requests, so it keeps a small log for diagnosis.
+    # gateway/fixtures, the page on your network below), never agent requests, so it
+    # keeps a small log for diagnosis.
     logging:
       driver: local
       options:
@@ -173,6 +174,9 @@ services:
       - tb-health:/health
     environment:
       - GATEWAY_MCP_URL=http://gateway:8000/mcp
+      # Optional, from .env: a page on your own network to check (gateway/watch.py).
+      - LAN_CHECK_URL
+      - LAN_CHECK_TEXT
     depends_on:
       - gateway
 

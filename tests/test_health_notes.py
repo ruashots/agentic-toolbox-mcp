@@ -132,3 +132,23 @@ def test_a_busy_browser_is_not_reported_as_an_outage(state):
     note = server._health_note("cf_browse", "Timed out waiting for a browse slot.")
     assert "busy, not broken" in note
     assert "OUTAGE" not in note
+
+
+def test_a_failing_network_check_is_named_in_the_note(state):
+    state.record("fetch_page", ok=True, duration=1.0, error=None)
+    fail(state, "fetch_page_lan", 2)
+    note = server._health_note("fetch_page")
+    assert "passed its last scheduled real-job check" in note
+    assert "address on your own network has been failing since" in note
+
+
+def test_the_browser_tools_get_the_browser_network_check(state):
+    state.record("cf_browse", ok=True, duration=1.0, error=None)
+    fail(state, "cf_browse_lan", 2)
+    assert "address on your own network has been failing" in server._health_note("cf_browse_snapshot")
+
+
+def test_no_network_sentence_while_the_network_check_passes(state):
+    state.record("fetch_page", ok=True, duration=1.0, error=None)
+    state.record("fetch_page_lan", ok=True, duration=1.0, error=None)
+    assert "own network" not in server._health_note("fetch_page")

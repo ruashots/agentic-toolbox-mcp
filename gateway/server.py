@@ -119,6 +119,8 @@ _ALTERNATIVES = {
                      "sites; for the page's text, use fetch_page on the URL.",
     "download_media": "No other download tool here.",
     "ping": "The toolbox endpoint itself is failing; every tool is affected.",
+    "fetch_page_lan": "Use cf_browse (Camoufox browser) for the same address.",
+    "cf_browse_lan": "Use fetch_page (Crawl4AI) for the same address.",
 }
 
 
@@ -173,6 +175,11 @@ def _health_note(tool: str, error_text: str = "") -> str:
     else:
         msg = (f"[toolbox] {subject} has not been checked yet (the toolbox started recently), "
                f"so this failure may be specific to your input or transient. One retry is reasonable. ")
+    lan = status.get("tools", {}).get(LAN_CHECKS.get(check, ""))
+    if lan and lan.get("status") == "down":
+        since = (lan.get("since") or "?")[:16].replace("T", " ")
+        msg += (f"Its check on an address on your own network has been failing since {since} UTC: "
+                f"if you asked for an address on your network, retrying will not help. ")
     if stale:
         msg += "(Health data is stale: the watcher has not reported recently.) "
     return (msg + alt).strip()
@@ -181,7 +188,7 @@ def _health_note(tool: str, error_text: str = "") -> str:
 from fastmcp.exceptions import ToolError
 from fastmcp.server.middleware import Middleware
 
-from watch import BROWSER_BUSY_MARKERS
+from watch import BROWSER_BUSY_MARKERS, LAN_CHECKS
 
 
 class _ExplainFailures(Middleware):
@@ -227,7 +234,8 @@ def toolbox_status() -> dict:
     Call this when a tool fails, or before relying on a tool for a long task.
     status is "up", "down" (known outage, retrying will not help) or "unknown"
     (not checked yet). All cf_* browser tools share one browser and are covered
-    by the cf_browse check.
+    by the cf_browse check. fetch_page_lan and cf_browse_lan check the same tools
+    on an address on your own network.
     """
     status = _read_status()
     if not status:

@@ -19,6 +19,7 @@ It is marked UP again after one good check.
 import asyncio
 import datetime as dt
 import json
+import math
 import os
 import time
 import traceback
@@ -42,6 +43,16 @@ BROWSER_BUSY_MARKERS = (
 )
 PAGE_PROBE = "https://www.wikipedia.org/"
 YOUTUBE_PROBE = "https://www.youtube.com/watch?v=jNQXAC9IVRw"  # "Me at the zoo", 19 s, first YouTube video
+# A web page on your own network, read with fetch_page and with the browser. The
+# default is the toolbox's own Stirling-PDF page: it draws itself with JavaScript,
+# and its address is a private one, so both tools take the same path as for a
+# homelab page an agent asks for. Set LAN_CHECK_URL (and LAN_CHECK_TEXT, words the
+# page always shows) in .env to check a real address on your network instead.
+LAN_PROBE = os.environ.get("LAN_CHECK_URL") or "http://stirling-pdf:8080/"
+LAN_PROBE_TEXT = os.environ.get("LAN_CHECK_TEXT") or "No files yet"
+# An everyday search. Good results name at least two of its three words; a broken
+# engine that answers for one word only (docker.com) does not.
+SEARCH_PROBE = "docker compose healthcheck"
 
 
 def _text(result) -> str:
@@ -71,10 +82,25 @@ def expect_contains(*needles):
     return check
 
 
-def expect_search_results(result):
-    data = _data(result)
-    if not isinstance(data, list) or len(data) == 0:
-        raise AssertionError(f"no search results; got: {_text(result)[:300]!r}")
+def expect_on_topic_results(query, at_least):
+    """At least `at_least` results must be about the query: each names two thirds of its words."""
+    words = query.lower().split()
+    need = math.ceil(len(words) * 2 / 3)
+
+    def on_topic(hit):
+        hay = " ".join(str(hit.get(k, "")) for k in ("title", "snippet", "url")).lower()
+        return sum(w in hay for w in words) >= need
+
+    def check(result):
+        data = _data(result)
+        if not isinstance(data, list) or len(data) == 0:
+            raise AssertionError(f"no search results; got: {_text(result)[:300]!r}")
+        hits = [h for h in data if isinstance(h, dict)]
+        good = [h for h in hits if on_topic(h)]
+        if len(good) < at_least:
+            off = [h.get("url", "")[:80] for h in hits if not on_topic(h)][:3]
+            raise AssertionError(f"only {len(good)} of {len(hits)} results were about {query!r}; off topic: {off}")
+    return check
 
 
 def expect_audio(result):
@@ -93,7 +119,7 @@ def expect_media(result):
 # The gateway's own "ping" check doubles as "is the endpoint reachable at all".
 CHECKS = {
     "ping": ("ping", {}, expect_contains("pong"), 60, 20),
-    "search_web": ("search_web", {"query": "wikipedia", "max_results": 3}, expect_search_results, 600, 40),
+    "search_web": ("search_web", {"query": SEARCH_PROBE, "max_results": 5}, expect_on_topic_results(SEARCH_PROBE, 3), 600, 40),
     # Not example.com: it asks not to be used for monitoring, and its text changed in 2026.
     "fetch_page": ("fetch_page", {"url": PAGE_PROBE}, expect_contains("Wikipedia"), 600, 120),
     # python.org loads a tracker that DNS filters (AdGuard Home, Pi-hole) commonly block,
@@ -107,11 +133,17 @@ CHECKS = {
     "synthesize_speech": ("synthesize_speech", {"text": "Health check.", "steps": 8}, expect_audio, 3600, 600),
     "extract_video": ("extract_video", {"url": YOUTUBE_PROBE, "want_transcript": False}, expect_contains("zoo"), 21600, 180),
     "download_media": ("download_media", {"url": YOUTUBE_PROBE, "kind": "audio", "max_mb": 5}, expect_media, 21600, 300),
+    # The same two page readers on an address on your own network (see LAN_PROBE).
+    "fetch_page_lan": ("fetch_page", {"url": LAN_PROBE}, expect_contains(LAN_PROBE_TEXT), 600, 120),
+    "cf_browse_lan": ("cf_browse", {"url": LAN_PROBE, "timeout": 60000}, expect_contains(LAN_PROBE_TEXT), 600, 150),
 }
+
+# The checks of a tool on your own network, by the tool's main check.
+LAN_CHECKS = {"fetch_page": "fetch_page_lan", "cf_browse": "cf_browse_lan"}
 
 # Every tool the gateway exposes maps to the check that proves it works.
 # All 17 browser tools share one browser, so cf_browse speaks for all of them.
-COVERS = {name: name for name in CHECKS}
+COVERS = {name: name for name in CHECKS if name not in LAN_CHECKS.values()}
 COVERS["cf_*"] = "cf_browse"
 
 DESCRIPTIONS = {
@@ -125,6 +157,8 @@ DESCRIPTIONS = {
     "synthesize_speech": "text to speech",
     "extract_video": "video metadata (yt-dlp)",
     "download_media": "media download (yt-dlp)",
+    "fetch_page_lan": "page fetching on your own network (Crawl4AI)",
+    "cf_browse_lan": "browser tools on your own network (Camoufox, all cf_* tools)",
 }
 
 
@@ -166,6 +200,7 @@ class State:
             "updated": iso(now()),
             "watcher_started": iso(self.started),
             "covers": COVERS,
+            "lan_checks": LAN_CHECKS,
             "tools": self.tools,
         }
         STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
