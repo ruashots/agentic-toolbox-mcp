@@ -39,16 +39,19 @@ outgoing:
 
 # Engines, measured on 2026-11-21 with eight everyday searches through this
 # SearXNG version. On-topic results out of all results returned:
-#   google 75/79, brave 78/80, duckduckgo 70/70, yandex 75/80, yahoo 55/56.
+#   google cse 79/80, brave 78/80, yandex 78/80, duckduckgo 70/70, yahoo 55/56.
 #   bing 3/80: it answers for one word of the search only (docker.com for
 #   "docker compose healthcheck"), so it is off.
-# startpage, qwant, mojeek, presearch, aol and yep refused or failed from the
-# same network. The defaults among them stay on: SearXNG pauses an engine that
-# keeps failing and tries it again later, so a paused engine costs nothing and
-# comes back on its own if the block lifts.
+# brave, yandex and yahoo are off by default in SearXNG, so they are switched on
+# here. startpage, qwant, mojeek, presearch, aol and yep refused or failed from
+# the same network. The defaults among them stay on: SearXNG pauses an engine
+# that keeps failing and tries it again later, so a paused engine costs nothing
+# and comes back on its own if the block lifts.
 engines:
   - name: bing
     disabled: true
+  - name: brave
+    disabled: false
   - name: yandex
     disabled: false
   - name: yahoo
