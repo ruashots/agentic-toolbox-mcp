@@ -6,6 +6,12 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tools: 27](https://img.shields.io/badge/MCP_tools-27-06b6d4)](#whats-in-the-box)
 
+[![Animated overview: four agents connect to one MCP toolbox for search, browsing, reading, transcription, and speech; a custom tool is added and becomes available to each agent](docs/media/toolbox-hero.gif)](docs/media/toolbox-hero.mp4)
+
+[Video with music and sound effects (27 seconds, MP4)](docs/media/toolbox-hero.mp4)
+
+*Concept animation. Compatible clients share one endpoint and service capacity; an active Camoufox session blocks other Camoufox calls. To make an added tool available to your agents, rebuild and restart the affected services, then reconnect the clients. See [limits](#useful-defaults-and-limits) and [extension steps](#extend-the-toolbox).*
+
 One self-hosted Model Context Protocol (MCP) endpoint. **27 tools. No API keys required by the bundled toolbox.** Run one Docker Compose stack and connect your compatible agent clients to the same URL for web search, two browser engines, document conversion, video tools, local transcription, and speech generation.
 
 Built for a shared tool layer across local-LLM agents, coding assistants, and custom agent applications. It is especially useful when an agent's current setup has no web search or you want a self-hosted search service shared across clients. The toolbox supplies tools, not the agent's language model or runtime; those remain your choice and may have their own credentials and costs.
@@ -13,10 +19,6 @@ Built for a shared tool layer across local-LLM agents, coding assistants, and cu
 Host it on a workstation or home server and share it across your MCP clients. Speech and document processing run on the toolbox host; web search and browsing make external requests.
 
 [Get started](#quick-start) · [Tools](#whats-in-the-box) · [Extend it](#extend-the-toolbox) · [Agent guide](AGENT_HANDOFF.md) · [Operations](docs/operations.md)
-
-![Recorded demo showing web search, page reading, browser navigation, and video metadata through the toolbox](docs/media/demo.svg)
-
-*Actual tool output captured by the included [demo script](gateway/demo.py). Run it against your own installation with `docker exec tb-gateway python demo.py`.*
 
 ## Which agents can use it?
 
@@ -111,6 +113,10 @@ The gateway rejects requests with an unapproved `Origin` header by default. Clie
 For tool usage recipes, give your agents [AGENT_HANDOFF.md](AGENT_HANDOFF.md). Its Claude Code setup examples are client-specific; the tool guidance also applies to other connected agents.
 
 ### 3. See it work
+
+![Recorded demo showing web search, page reading, browser navigation, and video metadata through the toolbox](docs/media/demo.svg)
+
+*Actual tool output captured by the included [demo script](gateway/demo.py). Run it against your own installation:*
 
 ```bash
 docker exec tb-gateway python demo.py
