@@ -6,11 +6,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Tools: 27](https://img.shields.io/badge/MCP_tools-27-06b6d4)](#whats-in-the-box)
 
-[![Animated overview: four agents connect to one MCP toolbox for search, browsing, reading, transcription, and speech; a custom tool is added and becomes available to each agent](docs/media/toolbox-hero.gif)](docs/media/toolbox-hero.mp4)
-
-[Video with music and sound effects (27 seconds, MP4)](docs/media/toolbox-hero.mp4)
-
-*Concept animation. Compatible clients share one endpoint and service capacity; an active Camoufox session blocks other Camoufox calls. To make an added tool available to your agents, rebuild and restart the affected services, then reconnect the clients. See [limits](#useful-defaults-and-limits) and [extension steps](#extend-the-toolbox).*
+<a href="docs/media/toolbox-hero.mp4"><img src="docs/media/toolbox-hero.gif" width="100%" alt="Animated overview: four agents connect to one MCP toolbox for search, browsing, reading, transcription, and speech; a custom tool is added and becomes available to each agent"></a>
 
 One self-hosted Model Context Protocol (MCP) endpoint. **27 tools. No API keys required by the bundled toolbox.** Run one Docker Compose stack and connect your compatible agent clients to the same URL for web search, two browser engines, document conversion, video tools, local transcription, and speech generation.
 
